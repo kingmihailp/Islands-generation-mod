@@ -11,13 +11,13 @@ description='''Replaces overworld generation with flying islands of various size
 [[dependencies.islandsmod]]
     modId="neoforge"
     type="required"
-    versionRange="[21.1,22)"
+    versionRange="[21.1,)"
     ordering="NONE"
     side="BOTH"
 
 [[dependencies.islandsmod]]
     modId="minecraft"
     type="required"
-    versionRange="[1.21.1,1.22)"
+    versionRange="[1.21,)"
     ordering="NONE"
     side="BOTH"
