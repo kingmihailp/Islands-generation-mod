@@ -11,7 +11,6 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.biome.Biome;
-import net.minecraft.world.level.biome.BiomeManager;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -33,10 +32,10 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     );
 
     // ── Grid / placement ──────────────────────────────────────────────────────
-    private static final int GRID_SIZE         = 320;
-    private static final float ISLAND_CHANCE   = 0.72f;
-    private static final float SATELLITE_CHANCE = 0.40f;
-    private static final float TRIPLE_CHANCE   = 0.22f;
+    private static final int    GRID_SIZE        = 320;
+    private static final float  ISLAND_CHANCE    = 0.72f;
+    private static final float  SATELLITE_CHANCE = 0.40f;
+    private static final float  TRIPLE_CHANCE    = 0.22f;
 
     // ── Island dimensions ─────────────────────────────────────────────────────
     private static final double MIN_RADIUS_H = 24.0;
@@ -46,11 +45,16 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     private static final int MIN_ISLAND_Y = 75;
     private static final int MAX_ISLAND_Y = 185;
 
-    // ── Resource keys for deterministic random factories ──────────────────────
+    // ── Deep root ─────────────────────────────────────────────────────────────
+    private static final int    ROOT_BOTTOM    = -58;  // deepslate floor
+    private static final int    DEEPSLATE_TOP  = -8;   // Y where deepslate starts dominating
+    private static final double ROOT_MIN_RH    = 48.0; // only islands larger than this get roots
+
+    // ── Resource keys ─────────────────────────────────────────────────────────
     private static final ResourceLocation RL_ISLANDS = ResourceLocation.fromNamespaceAndPath("islandsmod", "islands");
     private static final ResourceLocation RL_TERRAIN  = ResourceLocation.fromNamespaceAndPath("islandsmod", "terrain_noise");
 
-    // ── Cardinal directions for cliff-edge detection ──────────────────────────
+    // ── Cardinal directions ───────────────────────────────────────────────────
     private static final int[][] DIRS4 = {{1,0},{-1,0},{0,1},{0,-1}};
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -65,9 +69,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // BUILD SURFACE — generates island terrain + applies surface + waterfalls
-    // (fillFromNoise is final in NoiseBasedChunkGenerator; we override
-    //  buildSurface instead, which runs after it, and replace all terrain here)
+    // BUILD SURFACE — clears vanilla terrain, places islands + surface + falls
     // ═════════════════════════════════════════════════════════════════════════
 
     @Override
@@ -86,28 +88,21 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         int[] topYCache = new int[16 * 16];
         Arrays.fill(topYCache, Integer.MIN_VALUE);
 
-        // ── Per-column: clear vanilla terrain, place islands, apply surface ──
         for (int lx = 0; lx < 16; lx++) {
             for (int lz = 0; lz < 16; lz++) {
                 int wx = startX + lx;
                 int wz = startZ + lz;
 
-                // Remove whatever fillFromNoise placed in this column.
-                // Use the WG heightmap to avoid iterating the full 384-block range.
+                // Erase everything fillFromNoise placed
                 int vanillaTop = chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, lx, lz);
                 for (int y = minY; y <= vanillaTop; y++) {
-                    BlockState bs = chunk.getBlockState(new BlockPos(wx, y, wz));
-                    if (!bs.isAir()) {
-                        chunk.setBlockState(new BlockPos(wx, y, wz),
-                                Blocks.AIR.defaultBlockState(), false);
-                    }
+                    if (!chunk.getBlockState(new BlockPos(wx, y, wz)).isAir())
+                        chunk.setBlockState(new BlockPos(wx, y, wz), Blocks.AIR.defaultBlockState(), false);
                 }
 
-                // Place island stone and record topY for this column
                 int topY = fillIslandColumn(chunk, wx, wz, minY, maxY, islands, noiseSeed);
                 topYCache[lx * 16 + lz] = topY;
 
-                // Apply surface blocks (grass / dirt / sand …)
                 if (topY != Integer.MIN_VALUE) {
                     Holder<Biome> biome = region.getNoiseBiome(wx >> 2, topY >> 2, wz >> 2);
                     applySurfaceBlocks(chunk, wx, wz, topY, biome, noiseSeed);
@@ -115,36 +110,29 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
             }
         }
 
-        // ── Waterfall sources at cliff edges (interior columns only) ──────────
+        // Waterfall sources at exposed cliff edges
         for (int lx = 1; lx < 15; lx++) {
             for (int lz = 1; lz < 15; lz++) {
                 int topY = topYCache[lx * 16 + lz];
                 if (topY < 90) continue;
-
                 int wx = startX + lx;
                 int wz = startZ + lz;
-
                 RandomSource rng = randomState.getOrCreateRandomFactory(RL_TERRAIN).at(wx, topY, wz);
                 if (rng.nextFloat() > 0.07f) continue;
-
-                boolean isCliff = false;
                 for (int[] d : DIRS4) {
                     int nTop = topYCache[(lx + d[0]) * 16 + (lz + d[1])];
                     if (nTop == Integer.MIN_VALUE || topY - nTop > 12) {
-                        isCliff = true;
+                        chunk.setBlockState(new BlockPos(wx, topY + 1, wz),
+                                Blocks.WATER.defaultBlockState(), false);
                         break;
                     }
-                }
-                if (isCliff) {
-                    chunk.setBlockState(new BlockPos(wx, topY + 1, wz),
-                            Blocks.WATER.defaultBlockState(), false);
                 }
             }
         }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // ISLAND COLUMN FILL  — places stone and returns the column's topmost Y
+    // ISLAND COLUMN FILL
     // ═════════════════════════════════════════════════════════════════════════
 
     private int fillIslandColumn(ChunkAccess chunk, int wx, int wz,
@@ -153,33 +141,83 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         int columnTopY = Integer.MIN_VALUE;
 
         for (IslandData isl : islands) {
-            double dx = wx - isl.cx;
-            double dz = wz - isl.cz;
-            double dist  = Math.sqrt(dx * dx + dz * dz);
-            double normR = dist / isl.rh;
 
-            if (normR > 1.40) continue;
+            // ── 1. Domain warping — distort sample coordinates ───────────────
+            // This is the key to non-round shapes: the distance field is evaluated
+            // at a noise-warped position rather than the real (wx, wz).
+            double ws  = 0.030;          // spatial frequency of the warp field
+            double wr  = isl.rh * 0.44; // max warp distance in blocks
+            double swx = wx + (fractalNoise2D(wx * ws,       wz * ws,       noiseSeed + 100L, 4) * 2 - 1) * wr;
+            double swz = wz + (fractalNoise2D(wx * ws + 500, wz * ws + 500, noiseSeed + 200L, 4) * 2 - 1) * wr;
 
-            double baseShape = Math.max(0.0, 1.0 - Math.pow(normR, 1.5));
-            if (baseShape < 0.02) continue;
+            // ── 2. Radial noise — vary effective radius per angle ────────────
+            double angle       = Math.atan2(wz - isl.cz, wx - isl.cx);
+            double radialNoise = fractalNoise2D(
+                    Math.cos(angle) * 4.5 + isl.cx * 0.006,
+                    Math.sin(angle) * 4.5 + isl.cz * 0.006,
+                    noiseSeed + 300L, 5);
+            double effRadius = isl.rh * (0.58 + radialNoise * 0.68);
 
-            double shapeNoise = fractalNoise2D(wx * 0.06, wz * 0.06, noiseSeed, 3) * 0.38 - 0.06;
-            double shape = baseShape + shapeNoise * baseShape;
-            if (shape < 0.04) continue;
+            // ── 3. Normalised distance in warped space ───────────────────────
+            double wdx   = swx - isl.cx;
+            double wdz   = swz - isl.cz;
+            double dist  = Math.sqrt(wdx * wdx + wdz * wdz);
+            double normR = dist / effRadius;
+            if (normR > 1.22) continue;
 
-            double topNoise = fractalNoise2D(wx * 0.11, wz * 0.11, noiseSeed + 271L, 2) * 0.28;
-            double topY = isl.cy + isl.rv * shape * (1.0 + topNoise * baseShape);
+            // Shape value: 1 at centre, 0 at edge, irregular boundary
+            double shape = Math.max(0.0, 1.0 - Math.pow(normR, 1.35));
+            if (shape < 0.012) continue;
 
-            double botNoise = fractalNoise2D(wx * 0.09 + 5000, wz * 0.09 + 5000, noiseSeed + 137L, 2) * 0.45;
-            double bottomY  = isl.cy - isl.rv * 0.65 * Math.max(0.08, baseShape)
-                              - isl.rv * botNoise * baseShape;
+            // ── 4. Vertical extent of the main island body ───────────────────
+            double topNoise = fractalNoise2D(wx * 0.09, wz * 0.09, noiseSeed + 400L, 3) * 0.32;
+            double topYd    = isl.cy + isl.rv * shape * (1.0 + topNoise);
 
-            int iTop = Math.min((int) Math.round(topY), maxY - 1);
-            int iBot = Math.max((int) Math.round(bottomY), minY);
+            double botNoise = fractalNoise2D(wx * 0.07 + 5000, wz * 0.07 + 5000, noiseSeed + 500L, 3) * 0.55;
+            double bodyBotYd = isl.cy - isl.rv * 0.82 * Math.max(0.06, shape)
+                             - isl.rv * botNoise * shape;
+
+            int iTop     = Math.min((int) Math.round(topYd),    maxY - 1);
+            int iBodyBot = (int) Math.round(bodyBotYd);
+
+            // ── 5. Deep root — tapers down to ROOT_BOTTOM ───────────────────
+            double realDx   = wx - isl.cx;
+            double realDz   = wz - isl.cz;
+            double realDist = Math.sqrt(realDx * realDx + realDz * realDz);
+            double rootRad  = isl.rh * shape * 0.26; // wide near body, zero at edge
+            boolean hasRoot = isl.rh >= ROOT_MIN_RH && realDist < rootRad;
+
+            int iBot = hasRoot ? Math.max(ROOT_BOTTOM, minY)
+                               : Math.max(iBodyBot, minY);
             if (iTop < iBot) continue;
 
+            // ── 6. Place blocks ──────────────────────────────────────────────
             for (int y = iBot; y <= iTop; y++) {
-                chunk.setBlockState(new BlockPos(wx, y, wz), Blocks.STONE.defaultBlockState(), false);
+
+                // Below the main body we only fill inside the tapering root
+                if (y < iBodyBot) {
+                    if (!hasRoot) continue;
+                    // Linear taper: 100 % rootRad at body bottom → ~10 % at ROOT_BOTTOM
+                    double rootProgress = (iBodyBot - y) / (double)(iBodyBot - ROOT_BOTTOM);
+                    double curRootRad   = rootRad * (1.0 - rootProgress * 0.88);
+                    if (realDist > curRootRad) continue;
+                }
+
+                // Stone/deepslate transition matching vanilla depth
+                BlockState block;
+                if (y < DEEPSLATE_TOP) {
+                    block = Blocks.DEEPSLATE.defaultBlockState();
+                } else if (y < 8) {
+                    // Gradient zone: mix deepslate and stone with noise
+                    double mix = smoothNoise2D(wx * 0.25 + y * 0.12, wz * 0.25, noiseSeed + 600L);
+                    double t   = (y - DEEPSLATE_TOP) / (double)(8 - DEEPSLATE_TOP);
+                    block = (mix < t) ? Blocks.STONE.defaultBlockState()
+                                      : Blocks.DEEPSLATE.defaultBlockState();
+                } else {
+                    block = Blocks.STONE.defaultBlockState();
+                }
+
+                chunk.setBlockState(new BlockPos(wx, y, wz), block, false);
             }
             if (iTop > columnTopY) columnTopY = iTop;
         }
@@ -202,19 +240,19 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         for (int i = 1; i <= depth; i++) {
             int y = topY - i;
             if (y < chunk.getMinBuildHeight()) break;
-            if (!chunk.getBlockState(new BlockPos(wx, y, wz)).is(Blocks.STONE)) break;
+            BlockState cur = chunk.getBlockState(new BlockPos(wx, y, wz));
+            if (!cur.is(Blocks.STONE) && !cur.is(Blocks.DEEPSLATE)) break;
             chunk.setBlockState(new BlockPos(wx, y, wz), underBlock, false);
         }
     }
 
     private BlockState chooseSurfaceTop(Holder<Biome> biome) {
         Biome b = biome.value();
-        float temp = b.getBaseTemperature();
-        boolean hasPrecip = b.hasPrecipitation();
-
-        if (!hasPrecip && temp > 1.2f)          return Blocks.SAND.defaultBlockState();
-        if (temp < 0.05f && hasPrecip)          return Blocks.SNOW_BLOCK.defaultBlockState();
-        if (!hasPrecip && temp > 0.8f)          return Blocks.RED_SAND.defaultBlockState();
+        float temp    = b.getBaseTemperature();
+        boolean precip = b.hasPrecipitation();
+        if (!precip && temp > 1.2f)  return Blocks.SAND.defaultBlockState();
+        if (temp < 0.05f && precip)  return Blocks.SNOW_BLOCK.defaultBlockState();
+        if (!precip && temp > 0.8f)  return Blocks.RED_SAND.defaultBlockState();
         return Blocks.GRASS_BLOCK.defaultBlockState();
     }
 
@@ -226,18 +264,13 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // CARVERS — disabled (cave openings at island edges look wrong)
+    // CARVERS — vanilla cave carvers run after buildSurface and will naturally
+    // carve tunnels through island stone; void areas are unaffected.
     // ═════════════════════════════════════════════════════════════════════════
-
-    @Override
-    public void applyCarvers(WorldGenRegion region, long seed, RandomState randomState,
-                              BiomeManager biomeManager, StructureManager structureManager,
-                              ChunkAccess chunk, GenerationStep.Carving step) {
-        // intentionally empty
-    }
+    // (no override — fall through to NoiseBasedChunkGenerator.applyCarvers)
 
     // ═════════════════════════════════════════════════════════════════════════
-    // HEIGHT QUERY — used by structure placement and spawn finder
+    // HEIGHT QUERY
     // ═════════════════════════════════════════════════════════════════════════
 
     @Override
@@ -245,9 +278,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                               LevelHeightAccessor levelHeightAccessor, RandomState randomState) {
         PositionalRandomFactory islandRand = randomState.getOrCreateRandomFactory(RL_ISLANDS);
         long noiseSeed = randomState.getOrCreateRandomFactory(RL_TERRAIN).at(0, 0, 0).nextLong();
-
         List<IslandData> islands = gatherNearbyIslands(x, z, islandRand);
-
         int highest = levelHeightAccessor.getMinBuildHeight();
         for (IslandData isl : islands) {
             int t = approximateTopY(x, z, isl, noiseSeed);
@@ -269,11 +300,9 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         List<IslandData> result = new ArrayList<>();
         int gx = Math.floorDiv(wx, GRID_SIZE);
         int gz = Math.floorDiv(wz, GRID_SIZE);
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dz = -2; dz <= 2; dz++) {
+        for (int dx = -2; dx <= 2; dx++)
+            for (int dz = -2; dz <= 2; dz++)
                 buildCellIslands(gx + dx, gz + dz, randFac, result);
-            }
-        }
         return result;
     }
 
@@ -282,8 +311,8 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         RandomSource rng = randFac.at(cellX, 0, cellZ);
         if (rng.nextFloat() > ISLAND_CHANCE) return;
 
-        int wx   = cellX * GRID_SIZE + rng.nextInt(GRID_SIZE);
-        int wz   = cellZ * GRID_SIZE + rng.nextInt(GRID_SIZE);
+        int wx    = cellX * GRID_SIZE + rng.nextInt(GRID_SIZE);
+        int wz    = cellZ * GRID_SIZE + rng.nextInt(GRID_SIZE);
         int baseY = MIN_ISLAND_Y + rng.nextInt(MAX_ISLAND_Y - MIN_ISLAND_Y);
         double rh = MIN_RADIUS_H + rng.nextDouble() * (MAX_RADIUS_H - MIN_RADIUS_H);
         double rv = rh * (0.22 + rng.nextDouble() * 0.38);
@@ -294,18 +323,17 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         if (rng.nextFloat() < SATELLITE_CHANCE) {
             IslandData sat = spawnSatellite(primary, rng);
             out.add(sat);
-            if (rng.nextFloat() < TRIPLE_CHANCE) {
+            if (rng.nextFloat() < TRIPLE_CHANCE)
                 out.add(spawnSatellite(sat, rng));
-            }
         }
     }
 
     private IslandData spawnSatellite(IslandData parent, RandomSource rng) {
         double angle = rng.nextDouble() * 2.0 * Math.PI;
         double dist  = parent.rh * (1.1 + rng.nextDouble() * 1.3);
-        int satX = (int)(parent.cx + Math.cos(angle) * dist);
-        int satZ = (int)(parent.cz + Math.sin(angle) * dist);
-        int satY = parent.cy + rng.nextInt(51) - 25;
+        int satX  = (int)(parent.cx + Math.cos(angle) * dist);
+        int satZ  = (int)(parent.cz + Math.sin(angle) * dist);
+        int satY  = parent.cy + rng.nextInt(51) - 25;
         double satRH = parent.rh * (0.28 + rng.nextDouble() * 0.52);
         double satRV = satRH * (0.20 + rng.nextDouble() * 0.40);
         return new IslandData(satX, satY, satZ, satRH, satRV);
@@ -316,23 +344,34 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     // ═════════════════════════════════════════════════════════════════════════
 
     private int approximateTopY(int x, int z, IslandData isl, long noiseSeed) {
-        double dx = x - isl.cx;
-        double dz = z - isl.cz;
-        double dist  = Math.sqrt(dx * dx + dz * dz);
-        double normR = dist / isl.rh;
-        if (normR > 1.40) return Integer.MIN_VALUE;
+        // Must mirror the domain warp + radial noise from fillIslandColumn
+        double ws  = 0.030;
+        double wr  = isl.rh * 0.44;
+        double swx = x + (fractalNoise2D(x * ws,       z * ws,       noiseSeed + 100L, 4) * 2 - 1) * wr;
+        double swz = z + (fractalNoise2D(x * ws + 500, z * ws + 500, noiseSeed + 200L, 4) * 2 - 1) * wr;
 
-        double base = Math.max(0.0, 1.0 - Math.pow(normR, 1.5));
-        if (base < 0.02) return Integer.MIN_VALUE;
+        double angle       = Math.atan2(z - isl.cz, x - isl.cx);
+        double radialNoise = fractalNoise2D(
+                Math.cos(angle) * 4.5 + isl.cx * 0.006,
+                Math.sin(angle) * 4.5 + isl.cz * 0.006,
+                noiseSeed + 300L, 5);
+        double effRadius = isl.rh * (0.58 + radialNoise * 0.68);
 
-        double shapeNoise = fractalNoise2D(x * 0.06, z * 0.06, noiseSeed, 3) * 0.38 - 0.06;
-        double shape = base + shapeNoise * base;
-        double topNoise = fractalNoise2D(x * 0.11, z * 0.11, noiseSeed + 271L, 2) * 0.28;
-        return (int) Math.round(isl.cy + isl.rv * shape * (1.0 + topNoise * base));
+        double wdx   = swx - isl.cx;
+        double wdz   = swz - isl.cz;
+        double dist  = Math.sqrt(wdx * wdx + wdz * wdz);
+        double normR = dist / effRadius;
+        if (normR > 1.22) return Integer.MIN_VALUE;
+
+        double shape = Math.max(0.0, 1.0 - Math.pow(normR, 1.35));
+        if (shape < 0.012) return Integer.MIN_VALUE;
+
+        double topNoise = fractalNoise2D(x * 0.09, z * 0.09, noiseSeed + 400L, 3) * 0.32;
+        return (int) Math.round(isl.cy + isl.rv * shape * (1.0 + topNoise));
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // NOISE  (self-contained, no external dependency)
+    // NOISE  (self-contained)
     // ═════════════════════════════════════════════════════════════════════════
 
     private static double hash2D(int ix, int iz, long seed) {
