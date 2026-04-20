@@ -106,12 +106,16 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         List<IslandData>     islands = gatherNearbyIslands(startX + 8, startZ + 8, islandRand);
         List<BlobData>       blobs   = gatherNearbyBlobs  (startX + 8, startZ + 8, islandRand);
 
-        // Pool islands only in ocean biomes — filter before the column loop
-        List<PoolIslandData> pools = gatherNearbyPools(startX + 8, startZ + 8, islandRand);
-        pools.removeIf(p -> {
-            Holder<Biome> b = region.getNoiseBiome(p.cx() >> 2, 60 >> 2, p.cz() >> 2);
-            return !b.is(BiomeTags.IS_OCEAN) && !b.is(BiomeTags.IS_DEEP_OCEAN);
-        });
+        // Pool islands: only place them when the current chunk itself is ocean.
+        // Do NOT query getNoiseBiome at the distant pool-center coordinates —
+        // those positions can be outside the WorldGenRegion bounds and deadlock.
+        Holder<Biome> chunkBiome = region.getNoiseBiome(
+                (startX + 8) >> 2, 60 >> 2, (startZ + 8) >> 2);
+        boolean isOceanChunk = chunkBiome.is(BiomeTags.IS_OCEAN)
+                            || chunkBiome.is(BiomeTags.IS_DEEP_OCEAN);
+        List<PoolIslandData> pools = isOceanChunk
+                ? gatherNearbyPools(startX + 8, startZ + 8, islandRand)
+                : List.of();
 
         int[] topYCache = new int[16 * 16];
         Arrays.fill(topYCache, Integer.MIN_VALUE);
