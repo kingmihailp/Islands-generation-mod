@@ -18,7 +18,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.*;
-import net.minecraft.world.level.levelgen.NoiseColumn;
 import net.minecraft.world.level.levelgen.blending.Blender;
 
 import java.util.ArrayList;
@@ -281,43 +280,6 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
             if (t > highest) highest = t;
         }
         return highest;
-    }
-
-    @Override
-    public NoiseColumn getBaseColumn(int x, int z, LevelHeightAccessor levelHeightAccessor,
-                                      RandomState randomState) {
-        PositionalRandomFactory islandRand = randomState.getOrCreateRandomFactory(RL_ISLANDS);
-        long noiseSeed = randomState.getOrCreateRandomFactory(RL_TERRAIN).at(0, 0, 0).nextLong();
-
-        int minY  = levelHeightAccessor.getMinBuildHeight();
-        int total = levelHeightAccessor.getHeight();
-        BlockState[] column = new BlockState[total];
-        Arrays.fill(column, Blocks.AIR.defaultBlockState());
-
-        List<IslandData> islands = gatherNearbyIslands(x, z, islandRand);
-        for (IslandData isl : islands) {
-            double dx = x - isl.cx;
-            double dz = z - isl.cz;
-            double dist  = Math.sqrt(dx * dx + dz * dz);
-            double normR = dist / isl.rh;
-            if (normR > 1.40) continue;
-
-            double base = Math.max(0.0, 1.0 - Math.pow(normR, 1.5));
-            if (base < 0.02) continue;
-
-            int topY = approximateTopY(x, z, isl, noiseSeed);
-            int botY = (int)(isl.cy - isl.rv * 0.65 * Math.max(0.08, base));
-
-            int clampedTop = Math.min(topY, levelHeightAccessor.getMaxBuildHeight() - 1);
-            int clampedBot = Math.max(botY, minY);
-            for (int y = clampedBot; y <= clampedTop; y++) {
-                int idx = y - minY;
-                if (idx >= 0 && idx < total) {
-                    column[idx] = Blocks.STONE.defaultBlockState();
-                }
-            }
-        }
-        return new NoiseColumn(minY, column);
     }
 
     @Override
