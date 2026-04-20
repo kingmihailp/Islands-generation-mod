@@ -16,7 +16,9 @@ import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.*;
+import net.minecraft.world.level.levelgen.NoiseColumn;
 import net.minecraft.world.level.levelgen.blending.Blender;
 
 import java.util.ArrayList;
@@ -164,8 +166,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                 topYCache[lx * 16 + lz] = topY;
                 if (topY == Integer.MIN_VALUE) continue;
 
-                Holder<Biome> biome = region.getNoiseBiome(
-                        QuartPos.fromBlock(wx), QuartPos.fromBlock(topY), QuartPos.fromBlock(wz));
+                Holder<Biome> biome = region.getNoiseBiome(wx >> 2, topY >> 2, wz >> 2);
 
                 applySurfaceBlocks(chunk, wx, wz, topY, biome, noiseSeed);
             }
@@ -224,24 +225,27 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
 
     private BlockState chooseSurfaceTop(Holder<Biome> biome) {
         Biome b = biome.value();
-        float temp  = b.getBaseTemperature();
-        float rain  = b.climateSettings().downfall();
+        float temp = b.getBaseTemperature();
+        boolean hasPrecip = b.hasPrecipitation();
 
-        if (!b.climateSettings().hasPrecipitation() && temp > 1.2f) {
-            return Blocks.SAND.defaultBlockState();         // desert-like
+        // No precipitation + hot = desert-like surface
+        if (!hasPrecip && temp > 1.2f) {
+            return Blocks.SAND.defaultBlockState();
         }
-        if (temp < 0.05f && b.climateSettings().hasPrecipitation()) {
-            return Blocks.SNOW_BLOCK.defaultBlockState();   // frozen tundra
+        // Very cold with precipitation = frozen tundra
+        if (temp < 0.05f && hasPrecip) {
+            return Blocks.SNOW_BLOCK.defaultBlockState();
         }
-        if (rain < 0.1f && temp > 0.8f) {
-            return Blocks.RED_SAND.defaultBlockState();     // savanna / mesa edge
+        // Hot-ish without much rain = savanna-style
+        if (!hasPrecip && temp > 0.8f) {
+            return Blocks.RED_SAND.defaultBlockState();
         }
         return Blocks.GRASS_BLOCK.defaultBlockState();
     }
 
     private BlockState chooseSurfaceUnder(Holder<Biome> biome) {
         Biome b = biome.value();
-        if (!b.climateSettings().hasPrecipitation() && b.getBaseTemperature() > 1.2f) {
+        if (!b.hasPrecipitation() && b.getBaseTemperature() > 1.2f) {
             return Blocks.SAND.defaultBlockState();
         }
         return Blocks.DIRT.defaultBlockState();
