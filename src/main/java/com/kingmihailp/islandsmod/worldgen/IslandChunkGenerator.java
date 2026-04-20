@@ -180,12 +180,14 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
             int iTop     = Math.min((int) Math.round(topYd),    maxY - 1);
             int iBodyBot = (int) Math.round(bodyBotYd);
 
-            // ── 5. Deep root — tapers down to ROOT_BOTTOM ───────────────────
-            double realDx   = wx - isl.cx;
-            double realDz   = wz - isl.cz;
-            double realDist = Math.sqrt(realDx * realDx + realDz * realDz);
-            double rootRad  = isl.rh * shape * 0.26; // wide near body, zero at edge
-            boolean hasRoot = isl.rh >= ROOT_MIN_RH && realDist < rootRad;
+            // ── 5. Deep root — wide V-cone (see design screenshot) ──────────
+            // rootTopRadius = the full radius at the body-bottom attachment point.
+            // The cone tapers linearly to 0 at ROOT_BOTTOM, giving the V-shape.
+            double realDx       = wx - isl.cx;
+            double realDz       = wz - isl.cz;
+            double realDist     = Math.sqrt(realDx * realDx + realDz * realDz);
+            double rootTopRadius = isl.rh * 0.58; // 58% of island rh → wide V mouth
+            boolean hasRoot      = isl.rh >= ROOT_MIN_RH && realDist < rootTopRadius;
 
             int iBot = hasRoot ? Math.max(ROOT_BOTTOM, minY)
                                : Math.max(iBodyBot, minY);
@@ -194,12 +196,18 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
             // ── 6. Place blocks ──────────────────────────────────────────────
             for (int y = iBot; y <= iTop; y++) {
 
-                // Below the main body we only fill inside the tapering root
+                // Below the main body: only fill inside the V-cone
                 if (y < iBodyBot) {
                     if (!hasRoot) continue;
-                    // Linear taper: 100 % rootRad at body bottom → ~10 % at ROOT_BOTTOM
-                    double rootProgress = (iBodyBot - y) / (double)(iBodyBot - ROOT_BOTTOM);
-                    double curRootRad   = rootRad * (1.0 - rootProgress * 0.88);
+                    // Linear V-taper: full rootTopRadius at body bottom → 0 at ROOT_BOTTOM
+                    double rootProgress = (double)(iBodyBot - y) / (double)(iBodyBot - ROOT_BOTTOM);
+                    // Slightly concave profile (slower start, faster end) for visual depth
+                    double curRootRad = rootTopRadius * Math.pow(1.0 - rootProgress, 0.85);
+                    // Organic edge noise so the boundary isn't perfectly smooth
+                    double edgeNoise = fractalNoise2D(realDx * 0.06 + y * 0.02,
+                                                      realDz * 0.06,
+                                                      noiseSeed + 700L, 3) * 0.16 - 0.08;
+                    curRootRad = Math.max(0.0, curRootRad * (1.0 + edgeNoise));
                     if (realDist > curRootRad) continue;
                 }
 
