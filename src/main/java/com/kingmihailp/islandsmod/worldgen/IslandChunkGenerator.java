@@ -18,6 +18,8 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.*;
 
+import net.minecraft.tags.BiomeTags;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -54,6 +56,24 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     private static final ResourceLocation RL_ISLANDS = ResourceLocation.fromNamespaceAndPath("islandsmod", "islands");
     private static final ResourceLocation RL_TERRAIN  = ResourceLocation.fromNamespaceAndPath("islandsmod", "terrain_noise");
 
+    // ── Deep blobs (deepslate masses covering underground structures) ──────────
+    private static final int    BLOB_GRID    = 240;
+    private static final float  BLOB_CHANCE  = 0.62f;
+    private static final int    BLOB_MIN_CY  = -50;  // ancient-city depth
+    private static final int    BLOB_MAX_CY  = 46;   // stronghold / trial-chamber depth
+    private static final double BLOB_MIN_RH  = 34.0;
+    private static final double BLOB_MAX_RH  = 75.0;
+
+    // ── Ocean pool islands (flat islands with water basin for monuments) ───────
+    private static final int    POOL_GRID         = 496;
+    private static final float  POOL_CHANCE       = 0.56f;
+    private static final int    POOL_FLOOR_Y      = 38;   // stone base floor
+    private static final int    POOL_RIM_TOP_Y    = 66;   // top of outer stone rim
+    private static final int    POOL_WATER_BOT    = 40;   // water basin floor
+    private static final int    POOL_WATER_TOP    = 62;   // water surface
+    private static final double POOL_RIM_RADIUS   = 54.0; // outer rim half-width
+    private static final double POOL_BASIN_RADIUS = 31.0; // inner water zone half-width
+
     // ── Cardinal directions ───────────────────────────────────────────────────
     private static final int[][] DIRS4 = {{1,0},{-1,0},{0,1},{0,-1}};
 
@@ -83,7 +103,15 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         PositionalRandomFactory islandRand = randomState.getOrCreateRandomFactory(RL_ISLANDS);
         long noiseSeed = randomState.getOrCreateRandomFactory(RL_TERRAIN).at(0, 0, 0).nextLong();
 
-        List<IslandData> islands = gatherNearbyIslands(startX + 8, startZ + 8, islandRand);
+        List<IslandData>     islands = gatherNearbyIslands(startX + 8, startZ + 8, islandRand);
+        List<BlobData>       blobs   = gatherNearbyBlobs  (startX + 8, startZ + 8, islandRand);
+
+        // Pool islands only in ocean biomes — filter before the column loop
+        List<PoolIslandData> pools = gatherNearbyPools(startX + 8, startZ + 8, islandRand);
+        pools.removeIf(p -> {
+            Holder<Biome> b = region.getNoiseBiome(p.cx() >> 2, 60 >> 2, p.cz() >> 2);
+            return !b.is(BiomeTags.IS_OCEAN) && !b.is(BiomeTags.IS_DEEP_OCEAN);
+        });
 
         int[] topYCache = new int[16 * 16];
         Arrays.fill(topYCache, Integer.MIN_VALUE);
@@ -100,13 +128,21 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                         chunk.setBlockState(new BlockPos(wx, y, wz), Blocks.AIR.defaultBlockState(), false);
                 }
 
+                // ── Flying island terrain ────────────────────────────────────
                 int topY = fillIslandColumn(chunk, wx, wz, minY, maxY, islands, noiseSeed);
                 topYCache[lx * 16 + lz] = topY;
-
                 if (topY != Integer.MIN_VALUE) {
                     Holder<Biome> biome = region.getNoiseBiome(wx >> 2, topY >> 2, wz >> 2);
                     applySurfaceBlocks(chunk, wx, wz, topY, biome, noiseSeed);
                 }
+
+                // ── Deep structure blobs (don't overwrite island blocks) ──────
+                for (BlobData blob : blobs)
+                    fillBlobColumn(chunk, wx, wz, blob, noiseSeed);
+
+                // ── Ocean pool islands ────────────────────────────────────────
+                for (PoolIslandData pool : pools)
+                    fillPoolColumn(chunk, wx, wz, pool, noiseSeed);
             }
         }
 
@@ -412,8 +448,145 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
+    // DEEP BLOBS — grid-placed deepslate/stone masses that cover ancient cities,
+    // strongholds and trial chambers so they don't float in void.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private List<BlobData> gatherNearbyBlobs(int wx, int wz, PositionalRandomFactory randFac) {
+        List<BlobData> result = new ArrayList<>();
+        int gx = Math.floorDiv(wx, BLOB_GRID);
+        int gz = Math.floorDiv(wz, BLOB_GRID);
+        for (int dx = -2; dx <= 2; dx++)
+            for (int dz = -2; dz <= 2; dz++)
+                buildCellBlob(gx + dx, gz + dz, randFac, result);
+        return result;
+    }
+
+    private void buildCellBlob(int cellX, int cellZ,
+                                PositionalRandomFactory randFac, List<BlobData> out) {
+        // Y = 1 distinguishes this stream from the island stream (Y = 0)
+        RandomSource rng = randFac.at(cellX, 1, cellZ);
+        if (rng.nextFloat() > BLOB_CHANCE) return;
+
+        int wx  = cellX * BLOB_GRID + rng.nextInt(BLOB_GRID);
+        int wz  = cellZ * BLOB_GRID + rng.nextInt(BLOB_GRID);
+        int cy  = BLOB_MIN_CY + rng.nextInt(BLOB_MAX_CY - BLOB_MIN_CY);
+        double rh = BLOB_MIN_RH + rng.nextDouble() * (BLOB_MAX_RH - BLOB_MIN_RH);
+        double rv = rh * (0.38 + rng.nextDouble() * 0.38);
+        out.add(new BlobData(wx, cy, wz, rh, rv));
+    }
+
+    /** Fills deepslate/stone inside an ellipsoidal blob for one column.
+     *  Does not overwrite blocks already placed by island generation. */
+    private void fillBlobColumn(ChunkAccess chunk, int wx, int wz,
+                                 BlobData blob, long noiseSeed) {
+        double dx    = wx - blob.cx();
+        double dz    = wz - blob.cz();
+        double hdist = Math.sqrt(dx * dx + dz * dz);
+
+        // Organic boundary via noise-perturbed radius
+        double perim = fractalNoise2D(wx * 0.042, wz * 0.042, noiseSeed + 800L, 3) * 0.24 - 0.12;
+        double effRH = blob.rh() * (1.0 + perim);
+        if (hdist > effRH) return;
+
+        // Ellipsoid: at horizontal distance hdist, compute vertical half-extent
+        double normH  = hdist / effRH;
+        double shapeH = Math.sqrt(Math.max(0.0, 1.0 - normH * normH));
+        int yBot = Math.max((int) Math.round(blob.cy() - blob.rv() * shapeH), chunk.getMinBuildHeight());
+        int yTop = Math.min((int) Math.round(blob.cy() + blob.rv() * shapeH), chunk.getMaxBuildHeight() - 1);
+
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        for (int y = yBot; y <= yTop; y++) {
+            pos.set(wx, y, wz);
+            if (!chunk.getBlockState(pos).isAir()) continue; // keep island blocks
+
+            BlockState block;
+            if (y < DEEPSLATE_TOP) {
+                block = Blocks.DEEPSLATE.defaultBlockState();
+            } else if (y < 8) {
+                double mix = smoothNoise2D(wx * 0.25 + y * 0.12, wz * 0.25, noiseSeed + 601L);
+                double t   = (y - DEEPSLATE_TOP) / (double)(8 - DEEPSLATE_TOP);
+                block = (mix < t) ? Blocks.STONE.defaultBlockState()
+                                  : Blocks.DEEPSLATE.defaultBlockState();
+            } else {
+                block = Blocks.STONE.defaultBlockState();
+            }
+            chunk.setBlockState(pos, block, false);
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // OCEAN POOL ISLANDS — flat stone-rimmed islands with a water basin placed
+    // in ocean biomes.  Ocean monuments that attempt to generate in ocean biomes
+    // will find this water body and embed in it naturally.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private List<PoolIslandData> gatherNearbyPools(int wx, int wz, PositionalRandomFactory randFac) {
+        List<PoolIslandData> result = new ArrayList<>();
+        int gx = Math.floorDiv(wx, POOL_GRID);
+        int gz = Math.floorDiv(wz, POOL_GRID);
+        for (int dx = -2; dx <= 2; dx++)
+            for (int dz = -2; dz <= 2; dz++)
+                buildCellPool(gx + dx, gz + dz, randFac, result);
+        return result;
+    }
+
+    private void buildCellPool(int cellX, int cellZ,
+                                PositionalRandomFactory randFac, List<PoolIslandData> out) {
+        // Y = 2 distinguishes this stream from islands (Y = 0) and blobs (Y = 1)
+        RandomSource rng = randFac.at(cellX, 2, cellZ);
+        if (rng.nextFloat() > POOL_CHANCE) return;
+
+        int wx = cellX * POOL_GRID + rng.nextInt(POOL_GRID);
+        int wz = cellZ * POOL_GRID + rng.nextInt(POOL_GRID);
+        // Slight per-island radius variation so they're not all identical
+        double rimR   = POOL_RIM_RADIUS   * (0.85 + rng.nextDouble() * 0.30);
+        double basinR = POOL_BASIN_RADIUS * (0.85 + rng.nextDouble() * 0.30);
+        out.add(new PoolIslandData(wx, wz, rimR, basinR));
+    }
+
+    /** Fills one column of an ocean pool island: stone rim + water basin floor
+     *  and walls + water column.  Returns true if this column was inside the pool. */
+    private boolean fillPoolColumn(ChunkAccess chunk, int wx, int wz,
+                                    PoolIslandData pool, long noiseSeed) {
+        double dx   = wx - pool.cx();
+        double dz   = wz - pool.cz();
+        double dist = Math.sqrt(dx * dx + dz * dz);
+
+        // Organic rim boundary
+        double rimNoise = fractalNoise2D(wx * 0.038, wz * 0.038, noiseSeed + 910L, 3) * 0.18 - 0.09;
+        double effRim   = pool.rimRadius() * (1.0 + rimNoise);
+        if (dist > effRim) return false;
+
+        boolean inBasin = dist <= pool.basinRadius();
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+
+        // Stone base + rim walls
+        int stoneTop = inBasin ? POOL_WATER_BOT - 1 : POOL_RIM_TOP_Y;
+        for (int y = POOL_FLOOR_Y; y <= stoneTop; y++) {
+            if (y < chunk.getMinBuildHeight() || y >= chunk.getMaxBuildHeight()) continue;
+            pos.set(wx, y, wz);
+            if (chunk.getBlockState(pos).isAir())
+                chunk.setBlockState(pos, Blocks.STONE.defaultBlockState(), false);
+        }
+
+        // Water fill inside the basin
+        if (inBasin) {
+            for (int y = POOL_WATER_BOT; y <= POOL_WATER_TOP; y++) {
+                if (y < chunk.getMinBuildHeight() || y >= chunk.getMaxBuildHeight()) continue;
+                pos.set(wx, y, wz);
+                if (chunk.getBlockState(pos).isAir())
+                    chunk.setBlockState(pos, Blocks.WATER.defaultBlockState(), false);
+            }
+        }
+        return true;
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
     // DATA
     // ═════════════════════════════════════════════════════════════════════════
 
     private record IslandData(int cx, int cy, int cz, double rh, double rv) {}
+    private record BlobData(int cx, int cy, int cz, double rh, double rv) {}
+    private record PoolIslandData(int cx, int cz, double rimRadius, double basinRadius) {}
 }
