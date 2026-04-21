@@ -1,7 +1,7 @@
 {
   "structures": [
     {
-      "structure": "minecraft:ancient_city",
+      "structure": "minecraft:ocean_monument",
       "weight": 1
     }
   ],
@@ -10,6 +10,6 @@
     "spread_type": "linear",
     "spacing": 1000000,
     "separation": 0,
-    "salt": 20083232
+    "salt": 10387313
   }
 }
