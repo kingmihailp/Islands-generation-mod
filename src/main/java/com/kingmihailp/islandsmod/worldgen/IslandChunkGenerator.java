@@ -18,7 +18,8 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.*;
 
-import net.minecraft.tags.BiomeTags;
+import net.minecraft.core.RegistryAccess;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -101,16 +102,9 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         long worldSeed  = legacyLevelSeed(randomState);
 
         List<IslandData>     islands = gatherNearbyIslands(startX + 8, startZ + 8, islandRand);
-
-        // Pool islands: only build in ocean chunks to avoid orphaned platforms in deserts etc.
-        // Safe biome query — current chunk only, never a distant pool-center position.
-        Holder<Biome> chunkBiome = region.getNoiseBiome(
-                (startX + 8) >> 2, 60 >> 2, (startZ + 8) >> 2);
-        boolean isOceanChunk = chunkBiome.is(BiomeTags.IS_OCEAN)
-                            || chunkBiome.is(BiomeTags.IS_DEEP_OCEAN);
-        List<PoolIslandData> pools = isOceanChunk
-                ? gatherNearbyPools(startX + 8, startZ + 8, worldSeed)
-                : List.of();
+        // Always gather pools so the full rim is rendered in every chunk it overlaps.
+        // No getNoiseBiome call at distant coords — no deadlock risk.
+        List<PoolIslandData> pools   = gatherNearbyPools(startX + 8, startZ + 8, worldSeed);
 
         int[] topYCache = new int[16 * 16];
         Arrays.fill(topYCache, Integer.MIN_VALUE);
@@ -307,6 +301,54 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     // carve tunnels through island stone; void areas are unaffected.
     // ═════════════════════════════════════════════════════════════════════════
     // (no override — fall through to NoiseBasedChunkGenerator.applyCarvers)
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // STRUCTURE STARTS — skip any chunk that has neither island nor pool terrain
+    // so structures never generate floating in the void.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @Override
+    public void createStructures(RegistryAccess registryAccess,
+                                  ChunkGeneratorStructureState structureState,
+                                  StructureManager structureManager,
+                                  ChunkAccess chunk,
+                                  StructureTemplateManager structureTemplateManager) {
+        int cx = chunk.getPos().getMinBlockX() + 8;
+        int cz = chunk.getPos().getMinBlockZ() + 8;
+        RandomState rs = randomStateOf(structureState);
+        if (rs == null || chunkHasTerrain(cx, cz, rs)) {
+            super.createStructures(registryAccess, structureState, structureManager,
+                                   chunk, structureTemplateManager);
+        }
+    }
+
+    /** Reflects the private {@code randomState} field out of {@link ChunkGeneratorStructureState}. */
+    private static RandomState randomStateOf(ChunkGeneratorStructureState state) {
+        try {
+            java.lang.reflect.Field f =
+                    ChunkGeneratorStructureState.class.getDeclaredField("randomState");
+            f.setAccessible(true);
+            return (RandomState) f.get(state);
+        } catch (ReflectiveOperationException e) {
+            return null; // fallback: allow all structures (safe default)
+        }
+    }
+
+    /** Returns true if the given world-block position is near enough to an island or pool island
+     *  to have solid terrain. Used to gate structure-start creation. */
+    private boolean chunkHasTerrain(int cx, int cz, RandomState randomState) {
+        PositionalRandomFactory islandRand = randomState.getOrCreateRandomFactory(RL_ISLANDS);
+        for (IslandData isl : gatherNearbyIslands(cx, cz, islandRand)) {
+            double dx = cx - isl.cx(), dz = cz - isl.cz();
+            if (Math.sqrt(dx * dx + dz * dz) < isl.rh * 1.5) return true;
+        }
+        long worldSeed = legacyLevelSeed(randomState);
+        for (PoolIslandData pool : gatherNearbyPools(cx, cz, worldSeed)) {
+            double dx = cx - pool.cx(), dz = cz - pool.cz();
+            if (Math.sqrt(dx * dx + dz * dz) < pool.rimRadius() * 1.3) return true;
+        }
+        return false;
+    }
 
     // ═════════════════════════════════════════════════════════════════════════
     // HEIGHT QUERY
