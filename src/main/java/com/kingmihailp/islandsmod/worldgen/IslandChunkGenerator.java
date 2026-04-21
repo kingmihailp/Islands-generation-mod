@@ -98,7 +98,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
 
         PositionalRandomFactory islandRand = randomState.getOrCreateRandomFactory(RL_ISLANDS);
         long noiseSeed  = randomState.getOrCreateRandomFactory(RL_TERRAIN).at(0, 0, 0).nextLong();
-        long worldSeed  = randomState.legacyLevelSeed();
+        long worldSeed  = legacyLevelSeed(randomState);
 
         List<IslandData>     islands = gatherNearbyIslands(startX + 8, startZ + 8, islandRand);
 
@@ -447,6 +447,18 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     // in ocean biomes.  Ocean monuments that attempt to generate in ocean biomes
     // will find this water body and embed in it naturally.
     // ═════════════════════════════════════════════════════════════════════════
+
+    /** Reads the private legacyLevelSeed field from RandomState (no public getter in 1.21.1). */
+    private static long legacyLevelSeed(RandomState randomState) {
+        try {
+            java.lang.reflect.Field f = RandomState.class.getDeclaredField("legacyLevelSeed");
+            f.setAccessible(true);
+            return (long) f.get(randomState);
+        } catch (ReflectiveOperationException e) {
+            // Fallback: derive a stable per-world value from the noise factory
+            return randomState.getOrCreateRandomFactory(RL_TERRAIN).at(0, 0, 0).nextLong();
+        }
+    }
 
     /**
      * Returns pool islands co-located with vanilla ocean monument spawn points.
