@@ -56,10 +56,6 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     private static final ResourceLocation RL_ISLANDS = ResourceLocation.fromNamespaceAndPath("islandsmod", "islands");
     private static final ResourceLocation RL_TERRAIN  = ResourceLocation.fromNamespaceAndPath("islandsmod", "terrain_noise");
 
-    // ── Solid underground layer (guarantees all deep structures are embedded) ────
-    // Top surface is noise-warped so the ceiling looks organic, not flat.
-    private static final int    UNDERGROUND_BASE  = 16;   // average top Y of underground
-
     // ── Ocean pool islands (flat islands with water basin for monuments) ───────
     // Pools are placed at the SAME grid positions as vanilla ocean monuments
     // (spacing=32 chunks, separation=5, salt=10387313) so every monument spawns inside a pool.
@@ -129,25 +125,6 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                 for (int y = minY; y <= vanillaTop; y++) {
                     if (!chunk.getBlockState(new BlockPos(wx, y, wz)).isAir())
                         chunk.setBlockState(new BlockPos(wx, y, wz), Blocks.AIR.defaultBlockState(), false);
-                }
-
-                // ── Solid underground layer (houses all deep structures) ──────
-                // Top surface is noise-warped so the ceiling isn't a flat plane.
-                double underNoise = fractalNoise2D(wx * 0.032, wz * 0.032, noiseSeed + 850L, 4);
-                int underTop = UNDERGROUND_BASE + (int)(underNoise * 20.0) - 6; // ~Y 10..30
-                for (int y = minY; y <= underTop; y++) {
-                    BlockState block;
-                    if (y < DEEPSLATE_TOP) {
-                        block = Blocks.DEEPSLATE.defaultBlockState();
-                    } else if (y < 8) {
-                        double mix = smoothNoise2D(wx * 0.25 + y * 0.12, wz * 0.25, noiseSeed + 602L);
-                        double t   = (y - DEEPSLATE_TOP) / (double)(8 - DEEPSLATE_TOP);
-                        block = (mix < t) ? Blocks.STONE.defaultBlockState()
-                                          : Blocks.DEEPSLATE.defaultBlockState();
-                    } else {
-                        block = Blocks.STONE.defaultBlockState();
-                    }
-                    chunk.setBlockState(new BlockPos(wx, y, wz), block, false);
                 }
 
                 // ── Flying island terrain ────────────────────────────────────
