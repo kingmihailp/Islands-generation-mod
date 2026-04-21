@@ -19,6 +19,7 @@ import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.*;
 
 import net.minecraft.core.RegistryAccess;
+import net.minecraft.world.level.levelgen.structure.ChunkGeneratorStructureState;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
 
 import java.util.ArrayList;
