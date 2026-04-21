@@ -1,0 +1,6 @@
+{
+  "type": "minecraft:ocean_monument",
+  "biomes": "#minecraft:has_structure/ocean_monument",
+  "step": "surface_structures",
+  "spawn_overrides": {}
+}
