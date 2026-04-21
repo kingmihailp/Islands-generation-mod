@@ -19,6 +19,9 @@ import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.*;
 
 import net.minecraft.core.RegistryAccess;
+import net.minecraft.tags.BiomeTags;
+import net.minecraft.world.level.biome.Climate;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
 
@@ -68,8 +71,8 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     private static final int    POOL_RIM_TOP_Y      = 66;   // top of outer stone rim
     private static final int    POOL_WATER_BOT      = 40;   // water basin floor
     private static final int    POOL_WATER_TOP      = 62;   // water surface
-    private static final double POOL_RIM_RADIUS     = 80.0; // outer rim half-width (wider for coverage)
-    private static final double POOL_BASIN_RADIUS   = 40.0; // inner water zone half-width
+    private static final double POOL_RIM_RADIUS     = 92.0; // outer rim half-width
+    private static final double POOL_BASIN_RADIUS   = 50.0; // inner water zone — covers monument 58×58 footprint
     private static final double POOL_ROOT_FACTOR    = 0.82; // root top radius = rimRadius * this
 
     // ── Cardinal directions ───────────────────────────────────────────────────
@@ -102,10 +105,17 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         long noiseSeed  = randomState.getOrCreateRandomFactory(RL_TERRAIN).at(0, 0, 0).nextLong();
         long worldSeed  = legacyLevelSeed(randomState);
 
-        List<IslandData>     islands = gatherNearbyIslands(startX + 8, startZ + 8, islandRand);
-        // Always gather pools so the full rim is rendered in every chunk it overlaps.
-        // No getNoiseBiome call at distant coords — no deadlock risk.
-        List<PoolIslandData> pools   = gatherNearbyPools(startX + 8, startZ + 8, worldSeed);
+        List<IslandData> islands = gatherNearbyIslands(startX + 8, startZ + 8, islandRand);
+
+        // Filter pools to ocean-biome centers only — but render ALL chunks that overlap the pool
+        // radius (no per-chunk biome check → no cutoff).  biomeSource.getNoiseBiome() is a pure
+        // noise evaluation and can be called at any coordinates without deadlock risk.
+        Climate.Sampler climateSampler = randomState.sampler();
+        List<PoolIslandData> pools = new ArrayList<>();
+        for (PoolIslandData p : gatherNearbyPools(startX + 8, startZ + 8, worldSeed)) {
+            Holder<Biome> pb = biomeSource.getNoiseBiome(p.cx() >> 2, 60 >> 2, p.cz() >> 2, climateSampler);
+            if (pb.is(BiomeTags.IS_OCEAN) || pb.is(BiomeTags.IS_DEEP_OCEAN)) pools.add(p);
+        }
 
         int[] topYCache = new int[16 * 16];
         Arrays.fill(topYCache, Integer.MIN_VALUE);
@@ -366,6 +376,21 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
             int t = approximateTopY(x, z, isl, noiseSeed);
             if (t > highest) highest = t;
         }
+        // Return pool floor/rim heights so ocean monuments find a valid Y at structure-start time.
+        if (highest <= levelHeightAccessor.getMinBuildHeight()) {
+            long worldSeed = legacyLevelSeed(randomState);
+            for (PoolIslandData pool : gatherNearbyPools(x, z, worldSeed)) {
+                double pdx = x - pool.cx(), pdz = z - pool.cz();
+                double pd  = Math.sqrt(pdx * pdx + pdz * pdz);
+                if (pd <= pool.basinRadius()) {
+                    highest = POOL_WATER_BOT - 1; // ocean floor in basin for monument Y
+                    break;
+                } else if (pd <= pool.rimRadius() * 1.2) {
+                    highest = POOL_RIM_TOP_Y;
+                    break;
+                }
+            }
+        }
         return highest;
     }
 
@@ -543,46 +568,118 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         return result;
     }
 
-    /** Fills one column of an ocean pool island: stone rim + water basin + V-shaped root. */
+    /**
+     * Fills one column of an ocean pool island.
+     * Shape: procedural (domain warp + radial noise) like flying islands.
+     * Rim surface: grass + dirt + sparse oak trees.
+     * Basin: water filled, stone floor — sized to hold ocean monument (58×58 blocks).
+     * Below floor: V-shaped root identical to island roots.
+     */
     private boolean fillPoolColumn(ChunkAccess chunk, int wx, int wz,
                                     PoolIslandData pool, long noiseSeed) {
         double dx   = wx - pool.cx();
         double dz   = wz - pool.cz();
         double dist = Math.sqrt(dx * dx + dz * dz);
 
-        // Organic rim boundary
-        double rimNoise = fractalNoise2D(wx * 0.038, wz * 0.038, noiseSeed + 910L, 3) * 0.18 - 0.09;
-        double effRim   = pool.rimRadius() * (1.0 + rimNoise);
-        double rootTopRadius = pool.rimRadius() * POOL_ROOT_FACTOR;
+        // ── Procedural rim boundary (domain warp + radial noise) ─────────────
+        double ws  = 0.024;
+        double wr  = pool.rimRadius() * 0.28;
+        double swx = dx + (fractalNoise2D(wx * ws,       wz * ws,       noiseSeed + 950L, 4) * 2 - 1) * wr;
+        double swz = dz + (fractalNoise2D(wx * ws + 700, wz * ws + 700, noiseSeed + 951L, 4) * 2 - 1) * wr;
+        double wdist = Math.sqrt(swx * swx + swz * swz);
 
-        boolean inRim   = dist <= effRim;
-        boolean inRoot  = dist <= rootTopRadius * 1.12; // slight overreach for noise room
+        double angle      = Math.atan2(dz, dx);
+        double radialNoise = fractalNoise2D(
+                Math.cos(angle) * 3.5 + pool.cx() * 0.005,
+                Math.sin(angle) * 3.5 + pool.cz() * 0.005,
+                noiseSeed + 952L, 4);
+        double effRim = pool.rimRadius() * (0.65 + radialNoise * 0.55);
+
+        double rootTopRadius = pool.rimRadius() * POOL_ROOT_FACTOR;
+        boolean inRim   = wdist <= effRim;
+        boolean inBasin = dist  <= pool.basinRadius(); // real dist — monument needs precise circle
+        boolean inRoot  = dist  <= rootTopRadius * 1.12;
+
         if (!inRim && !inRoot) return false;
 
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 
-        // ── Above-ground body: stone rim + water basin ─────────────────────────
+        // ── Above-ground body ─────────────────────────────────────────────────
         if (inRim) {
-            boolean inBasin = dist <= pool.basinRadius();
-            int stoneTop = inBasin ? POOL_WATER_BOT - 1 : POOL_RIM_TOP_Y;
-            for (int y = POOL_FLOOR_Y; y <= stoneTop; y++) {
-                if (y < chunk.getMinBuildHeight() || y >= chunk.getMaxBuildHeight()) continue;
-                pos.set(wx, y, wz);
-                if (chunk.getBlockState(pos).isAir())
-                    chunk.setBlockState(pos, Blocks.STONE.defaultBlockState(), false);
-            }
             if (inBasin) {
+                // Basin: thin stone floor + water column
+                for (int y = POOL_FLOOR_Y; y <= POOL_WATER_BOT - 1; y++) {
+                    if (y < chunk.getMinBuildHeight() || y >= chunk.getMaxBuildHeight()) continue;
+                    pos.set(wx, y, wz);
+                    if (chunk.getBlockState(pos).isAir())
+                        chunk.setBlockState(pos, Blocks.STONE.defaultBlockState(), false);
+                }
                 for (int y = POOL_WATER_BOT; y <= POOL_WATER_TOP; y++) {
                     if (y < chunk.getMinBuildHeight() || y >= chunk.getMaxBuildHeight()) continue;
                     pos.set(wx, y, wz);
                     if (chunk.getBlockState(pos).isAir())
                         chunk.setBlockState(pos, Blocks.WATER.defaultBlockState(), false);
                 }
+            } else {
+                // Rim: stone core → dirt sublayer → grass top → optional tree
+                int stoneTop = POOL_RIM_TOP_Y - 4; // leave 3 dirt + 1 grass above
+                for (int y = POOL_FLOOR_Y; y <= stoneTop; y++) {
+                    if (y < chunk.getMinBuildHeight() || y >= chunk.getMaxBuildHeight()) continue;
+                    pos.set(wx, y, wz);
+                    if (chunk.getBlockState(pos).isAir())
+                        chunk.setBlockState(pos, Blocks.STONE.defaultBlockState(), false);
+                }
+                for (int y = stoneTop + 1; y <= POOL_RIM_TOP_Y - 1; y++) {
+                    if (y < chunk.getMinBuildHeight() || y >= chunk.getMaxBuildHeight()) continue;
+                    pos.set(wx, y, wz);
+                    if (chunk.getBlockState(pos).isAir())
+                        chunk.setBlockState(pos, Blocks.DIRT.defaultBlockState(), false);
+                }
+                if (POOL_RIM_TOP_Y < chunk.getMaxBuildHeight()) {
+                    pos.set(wx, POOL_RIM_TOP_Y, wz);
+                    if (chunk.getBlockState(pos).isAir())
+                        chunk.setBlockState(pos, Blocks.GRASS_BLOCK.defaultBlockState(), false);
+                }
+
+                // Trees: trunk at this column when noise threshold exceeded
+                double tNoise = fractalNoise2D(wx * 0.19, wz * 0.19, noiseSeed + 980L, 2);
+                if (tNoise > 0.76) {
+                    int trunkH = 4 + (int)(fractalNoise2D(wx * 0.5, wz * 0.5, noiseSeed + 984L, 1) * 2);
+                    for (int t = 1; t <= trunkH; t++) {
+                        int ty = POOL_RIM_TOP_Y + t;
+                        if (ty < chunk.getMaxBuildHeight()) {
+                            pos.set(wx, ty, wz);
+                            chunk.setBlockState(pos, Blocks.OAK_LOG.defaultBlockState(), false);
+                        }
+                    }
+                }
+
+                // Leaves: scan nearby tree centres and place leaves at this column position
+                for (int lx2 = -3; lx2 <= 3; lx2++) {
+                    for (int lz2 = -3; lz2 <= 3; lz2++) {
+                        int r2 = lx2 * lx2 + lz2 * lz2;
+                        if (r2 > 12) continue;
+                        double tN2 = fractalNoise2D((wx + lx2) * 0.19, (wz + lz2) * 0.19, noiseSeed + 980L, 2);
+                        if (tN2 <= 0.76) continue;
+                        int tH2    = 4 + (int)(fractalNoise2D((wx + lx2) * 0.5, (wz + lz2) * 0.5, noiseSeed + 984L, 1) * 2);
+                        int leafCY = POOL_RIM_TOP_Y + tH2 + 1;
+                        for (int ly2 = -1; ly2 <= 2; ly2++) {
+                            int maxR2 = (ly2 >= 1) ? 3 : 9;
+                            if (r2 > maxR2) continue;
+                            int leafY = leafCY + ly2;
+                            if (leafY >= chunk.getMaxBuildHeight()) continue;
+                            pos.set(wx, leafY, wz);
+                            if (chunk.getBlockState(pos).isAir())
+                                chunk.setBlockState(pos,
+                                        Blocks.OAK_LEAVES.defaultBlockState()
+                                              .setValue(BlockStateProperties.PERSISTENT, true), false);
+                        }
+                    }
+                }
             }
         }
 
         // ── V-cone root below pool floor ──────────────────────────────────────
-        // Same taper logic as island roots: wide mouth at POOL_FLOOR_Y, tip at ROOT_BOTTOM.
         if (inRoot) {
             int rootBot = Math.max(ROOT_BOTTOM, chunk.getMinBuildHeight());
             for (int y = rootBot; y < POOL_FLOOR_Y; y++) {
@@ -592,11 +689,9 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                                                      noiseSeed + 920L, 3) * 0.16 - 0.08;
                 curRootRad = Math.max(0.0, curRootRad * (1.0 + edgeNoise));
                 if (dist > curRootRad) continue;
-
                 if (y < chunk.getMinBuildHeight() || y >= chunk.getMaxBuildHeight()) continue;
                 pos.set(wx, y, wz);
                 if (!chunk.getBlockState(pos).isAir()) continue;
-
                 BlockState block;
                 if (y < DEEPSLATE_TOP) {
                     block = Blocks.DEEPSLATE.defaultBlockState();
