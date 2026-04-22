@@ -304,24 +304,9 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                                   StructureManager structureManager,
                                   ChunkAccess chunk,
                                   StructureTemplateManager templateManager) {
-        RandomState rs = extractRandomState(structureState);
-        if (rs == null || chunkHasTerrain(chunk, rs)) {
+        if (chunkHasTerrain(chunk, structureState.randomState())) {
             super.createStructures(registryAccess, structureState, structureManager, chunk, templateManager);
         }
-    }
-
-    /** Finds the RandomState field in ChunkGeneratorStructureState by type, avoiding name/obfuscation issues. */
-    private static RandomState extractRandomState(ChunkGeneratorStructureState state) {
-        for (Class<?> c = state.getClass(); c != null; c = c.getSuperclass()) {
-            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
-                if (f.getType() == RandomState.class) {
-                    f.setAccessible(true);
-                    try { return (RandomState) f.get(state); }
-                    catch (ReflectiveOperationException ignored) {}
-                }
-            }
-        }
-        return null; // fallback: allow all structures
     }
 
     /** Returns true if any island has its centre within 1.5× rh of the chunk centre. */
