@@ -5,6 +5,7 @@ import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.WorldGenRegion;
 import net.minecraft.util.RandomSource;
@@ -17,6 +18,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.*;
+import net.minecraft.world.level.levelgen.structure.placement.ChunkGeneratorStructureState;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
 import net.minecraft.tags.BiomeTags;
 import net.minecraft.world.level.biome.Climate;
 
@@ -288,6 +291,49 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         if (!b.hasPrecipitation() && b.getBaseTemperature() > 1.2f)
             return Blocks.SAND.defaultBlockState();
         return Blocks.DIRT.defaultBlockState();
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // STRUCTURE STARTS — skip chunks with no island terrain so structures
+    // never generate floating in the void
+    // ═════════════════════════════════════════════════════════════════════════
+
+    @Override
+    public void createStructures(RegistryAccess registryAccess,
+                                  ChunkGeneratorStructureState structureState,
+                                  StructureManager structureManager,
+                                  ChunkAccess chunk,
+                                  StructureTemplateManager templateManager) {
+        RandomState rs = extractRandomState(structureState);
+        if (rs == null || chunkHasTerrain(chunk, rs)) {
+            super.createStructures(registryAccess, structureState, structureManager, chunk, templateManager);
+        }
+    }
+
+    /** Finds the RandomState field in ChunkGeneratorStructureState by type, avoiding name/obfuscation issues. */
+    private static RandomState extractRandomState(ChunkGeneratorStructureState state) {
+        for (Class<?> c = state.getClass(); c != null; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                if (f.getType() == RandomState.class) {
+                    f.setAccessible(true);
+                    try { return (RandomState) f.get(state); }
+                    catch (ReflectiveOperationException ignored) {}
+                }
+            }
+        }
+        return null; // fallback: allow all structures
+    }
+
+    /** Returns true if any island has its centre within 1.5× rh of the chunk centre. */
+    private boolean chunkHasTerrain(ChunkAccess chunk, RandomState randomState) {
+        int cx = chunk.getPos().getMinBlockX() + 8;
+        int cz = chunk.getPos().getMinBlockZ() + 8;
+        PositionalRandomFactory islandRand = randomState.getOrCreateRandomFactory(RL_ISLANDS);
+        for (IslandData isl : gatherNearbyIslands(cx, cz, islandRand)) {
+            double dx = cx - isl.cx(), dz = cz - isl.cz();
+            if (dx * dx + dz * dz < isl.rh * isl.rh * 2.25) return true;
+        }
+        return false;
     }
 
     // ═════════════════════════════════════════════════════════════════════════
