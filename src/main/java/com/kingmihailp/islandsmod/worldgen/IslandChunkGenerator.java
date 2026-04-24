@@ -318,9 +318,16 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
             int t = approximateTopY(x, z, isl, noiseSeed);
             if (t > highest) highest = t;
         }
-        // Return sea level (63) when no island exists so ocean/surface structures
-        // (shipwrecks, monuments, etc.) aren't anchored at minBuildHeight (-64).
-        return highest == Integer.MIN_VALUE ? 63 : highest;
+        // For positions with no island, return a sensible height per heightmap type
+        // so vanilla structure placement anchors at realistic positions:
+        //   OCEAN_FLOOR_* → 46  (typical seafloor, below sea_level 63)
+        //   everything else → 63 (sea surface / terrain surface)
+        // Returning 63 for OCEAN_FLOOR would equal sea_level, causing validators
+        // to treat the position as "no ocean" and discard shipwreck placements.
+        if (highest != Integer.MIN_VALUE) return highest;
+        boolean isFloor = (types == Heightmap.Types.OCEAN_FLOOR_WG
+                        || types == Heightmap.Types.OCEAN_FLOOR);
+        return isFloor ? 46 : 63;
     }
 
     @Override
