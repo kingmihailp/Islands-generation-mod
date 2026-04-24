@@ -391,13 +391,14 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     private static double randomBotF    (RandomSource r) { return 0.04 + r.nextDouble() * 1.46; }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // STRUCTURE PLATFORMS — flat island under every structure
+    // STRUCTURE PLATFORMS — organic contour island around every structure
     // ═════════════════════════════════════════════════════════════════════════
 
     /**
-     * Collects bounding boxes for all structures that affect this chunk.
-     * Two-step lookup: StructureManager first, then WorldGenRegion fallback
-     * to avoid missing data at chunk boundaries.
+     * Collects bounding boxes of all structures relevant to this chunk.
+     * Tries StructureManager for every section-Y (deep structures like ancient
+     * cities live at section Y=-4, not 0), then falls back to a direct chunk
+     * read from the WorldGenRegion to handle chunks near the region boundary.
      */
     private List<BoundingBox> gatherStructurePlatforms(ChunkAccess chunk,
                                                         StructureManager structureManager,
@@ -413,14 +414,17 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
             for (long packed : entry.getValue().toLongArray()) {
                 try {
                     ChunkPos cp = new ChunkPos(packed);
-                    // Primary: StructureManager lookup
-                    List<StructureStart> starts =
-                            structureManager.startsForStructure(SectionPos.of(cp, 0), structure);
-                    if (!starts.isEmpty()) {
-                        for (StructureStart s : starts)
-                            if (s.isValid()) result.add(s.getBoundingBox());
-                    } else {
-                        // Fallback: read start chunk directly from region
+                    boolean found = false;
+                    // Scan all section Y values so we don't miss deep structures
+                    // (ancient cities at Y≈-52 live in section Y=-4, not 0).
+                    for (int sy = -5; sy <= 20 && !found; sy++) {
+                        List<StructureStart> starts =
+                                structureManager.startsForStructure(SectionPos.of(cp, sy), structure);
+                        for (StructureStart s : starts) {
+                            if (s.isValid()) { result.add(s.getBoundingBox()); found = true; }
+                        }
+                    }
+                    if (!found) {
                         ChunkAccess startChunk = region.getChunk(cp.x, cp.z);
                         if (startChunk != null) {
                             StructureStart s = startChunk.getAllStarts().get(structure);
@@ -434,9 +438,18 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     }
 
     /**
-     * Generates the stone base of a structure platform for one column.
-     * Uses circular distance from the BB perimeter + angle-based noise
-     * so the island looks organic (not square) and never clips at chunk edges.
+     * Builds an organic stone contour shelf around the structure's perimeter.
+     *
+     * Three key design decisions vs the old approach:
+     *  1. CONTOUR only — columns inside the BB footprint are skipped; only the
+     *     exterior ring receives stone so the structure interior is untouched.
+     *  2. Top flush with structure floor — topY = bb.minY() so the shelf is at
+     *     the same height as the structure floor and players can step straight
+     *     from any door/exit onto the island without a vertical drop.
+     *  3. No chunk seams — effectivePad blends angle-based noise (gives each
+     *     structure a unique organic silhouette) with position-based noise
+     *     (eliminates the hard seam that appeared when pure angle noise changed
+     *     sign across a chunk boundary).
      */
     private int fillStructurePlatformColumn(ChunkAccess chunk, int wx, int wz,
                                              int minY, int maxY,
@@ -444,39 +457,45 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         int columnTopY = Integer.MIN_VALUE;
 
         for (BoundingBox bb : platforms) {
-            // Circular distance from nearest point on BB perimeter
+            // ── Part 1: contour only ─────────────────────────────────────────
+            // Columns inside the structure's footprint are left untouched;
+            // the structure places its own blocks there via applyBiomeDecoration.
+            if (wx >= bb.minX() && wx <= bb.maxX()
+                    && wz >= bb.minZ() && wz <= bb.maxZ()) continue;
+
+            // Distance from this column to the nearest point on the BB edge
             double nearX = Math.max(bb.minX(), Math.min(wx, bb.maxX()));
             double nearZ = Math.max(bb.minZ(), Math.min(wz, bb.maxZ()));
-            double edgeDX = wx - nearX;
-            double edgeDZ = wz - nearZ;
-            double edgeDist = Math.sqrt(edgeDX * edgeDX + edgeDZ * edgeDZ);
+            double dx = wx - nearX, dz = wz - nearZ;
+            double edgeDist = Math.sqrt(dx * dx + dz * dz);
 
-            // Angle-based noise: same value for same world-position regardless of chunk
-            double centerX = (bb.minX() + bb.maxX()) * 0.5;
-            double centerZ = (bb.minZ() + bb.maxZ()) * 0.5;
-            double angle = Math.atan2(wz - centerZ, wx - centerX);
+            // ── Part 2: chunk-seam-free organic pad ──────────────────────────
+            // Angle-based component → unique silhouette per structure position.
+            double cx = (bb.minX() + bb.maxX()) * 0.5;
+            double cz = (bb.minZ() + bb.maxZ()) * 0.5;
+            double angle = Math.atan2(wz - cz, wx - cx);
             double angNoise = fractalNoise2D(
-                    Math.cos(angle) * 3.2 + centerX * 0.018,
-                    Math.sin(angle) * 3.2 + centerZ * 0.018,
+                    Math.cos(angle) * 4.0 + cx * 0.014,
+                    Math.sin(angle) * 4.0 + cz * 0.014,
                     noiseSeed + 9999L, 4);
-            double effectivePad = 9.0 * (0.38 + angNoise * 0.82); // ~3.4–10.8 blocks
-
-            // Underground structures (ancient cities, trial chambers) get a wider pad
-            // so the platform is reachable by players descending from above.
-            if (bb.minY() < 0) effectivePad *= 1.8;
+            // Position-based component → smooths the transition at chunk edges.
+            double posNoise = fractalNoise2D(wx * 0.055, wz * 0.055, noiseSeed + 8888L, 3);
+            // Coefficients sum to 1.0 → range is [basePad×0.42, basePad×1.0]
+            double basePad = bb.minY() < 0 ? 16.0 : 12.0;
+            double effectivePad = basePad * (0.42 + angNoise * 0.40 + posNoise * 0.18);
 
             if (edgeDist > effectivePad) continue;
 
-            // Clamp topY upward: never go below minY+1 so the platform stays in the world.
-            // This handles ancient cities (bb.minY ≈ -63) whose raw topY = -64 = world floor.
-            int topY = Math.max(bb.minY() - 1, minY + 1);
+            // ── Part 3: topY flush with structure floor ───────────────────────
+            // The shelf top equals bb.minY() so it is walkable from any
+            // ground-level exit of the structure without a step down.
+            int topY = Math.max(bb.minY(), minY + 1);
             if (topY >= maxY) continue;
 
             float fade = (float)(1.0 - edgeDist / effectivePad);
-            double noiseThick = fractalNoise2D(wx * 0.14, wz * 0.14, noiseSeed + 7777L, 3);
-            // Underground structures get a thicker stone floor so they're accessible.
-            int baseThick = bb.minY() < 0 ? 6 : 3;
-            int thickness = Math.max(1, (int)(fade * (baseThick + noiseThick * 5)));
+            double noiseThick = fractalNoise2D(wx * 0.10, wz * 0.10, noiseSeed + 7777L, 3);
+            int baseThick = bb.minY() < 0 ? 5 : 4;
+            int thickness = Math.max(1, (int)(fade * (baseThick + noiseThick * 4)));
 
             int botY = Math.max(topY - thickness, minY);
             for (int y = botY; y <= topY; y++) {
