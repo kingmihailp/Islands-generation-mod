@@ -119,7 +119,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                         chunk.setBlockState(new BlockPos(wx, y, wz), Blocks.AIR.defaultBlockState(), false);
                 }
 
-                int islandTop   = fillIslandColumn(chunk, wx, wz, minY, maxY, islands, noiseSeed);
+                int islandTop   = fillIslandColumn(chunk, wx, wz, minY, maxY, islands, noiseSeed, structurePlatforms);
                 int platformTop = fillStructurePlatformColumn(chunk, wx, wz, minY, maxY, structurePlatforms, noiseSeed);
                 topYCache[lx * 16 + lz] = Math.max(islandTop, platformTop);
             }
@@ -199,7 +199,8 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
 
     private int fillIslandColumn(ChunkAccess chunk, int wx, int wz,
                                   int minY, int maxY,
-                                  List<IslandData> islands, long noiseSeed) {
+                                  List<IslandData> islands, long noiseSeed,
+                                  List<BoundingBox> noBuildZones) {
         int columnTopY = Integer.MIN_VALUE;
 
         for (IslandData isl : islands) {
@@ -242,7 +243,21 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
             if (iTop < iBot) continue;
 
             // ── 5. Place blocks ──────────────────────────────────────────────
+            // Blocks inside structure bounding boxes are skipped entirely so
+            // that structure templates can place their own air/blocks in
+            // applyBiomeDecoration without island stone creating holes.
             for (int y = iBot; y <= iTop; y++) {
+                boolean inBB = false;
+                for (BoundingBox nb : noBuildZones) {
+                    if (wx >= nb.minX() && wx <= nb.maxX()
+                            && wz >= nb.minZ() && wz <= nb.maxZ()
+                            && y  >= nb.minY() && y  <= nb.maxY()) {
+                        inBB = true;
+                        break;
+                    }
+                }
+                if (inBB) continue;
+
                 BlockState block;
                 if (y < DEEPSLATE_TOP) {
                     block = Blocks.DEEPSLATE.defaultBlockState();
@@ -255,8 +270,8 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                     block = Blocks.STONE.defaultBlockState();
                 }
                 chunk.setBlockState(new BlockPos(wx, y, wz), block, false);
+                if (y > columnTopY) columnTopY = y;
             }
-            if (iTop > columnTopY) columnTopY = iTop;
         }
 
         return columnTopY;
