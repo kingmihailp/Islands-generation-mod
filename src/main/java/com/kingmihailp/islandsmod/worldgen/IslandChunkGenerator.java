@@ -313,12 +313,14 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         PositionalRandomFactory islandRand = randomState.getOrCreateRandomFactory(RL_ISLANDS);
         long noiseSeed = randomState.getOrCreateRandomFactory(RL_TERRAIN).at(0, 0, 0).nextLong();
         List<IslandData> islands = gatherNearbyIslands(x, z, islandRand);
-        int highest = levelHeightAccessor.getMinBuildHeight();
+        int highest = Integer.MIN_VALUE;
         for (IslandData isl : islands) {
             int t = approximateTopY(x, z, isl, noiseSeed);
             if (t > highest) highest = t;
         }
-        return highest;
+        // Return sea level (63) when no island exists so ocean/surface structures
+        // (shipwrecks, monuments, etc.) aren't anchored at minBuildHeight (-64).
+        return highest == Integer.MIN_VALUE ? 63 : highest;
     }
 
     @Override
@@ -452,14 +454,22 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                     noiseSeed + 9999L, 4);
             double effectivePad = 9.0 * (0.38 + angNoise * 0.82); // ~3.4–10.8 blocks
 
+            // Underground structures (ancient cities, trial chambers) get a wider pad
+            // so the platform is reachable by players descending from above.
+            if (bb.minY() < 0) effectivePad *= 1.8;
+
             if (edgeDist > effectivePad) continue;
 
-            int topY = bb.minY() - 1;
-            if (topY < minY + 2 || topY >= maxY) continue;
+            // Clamp topY upward: never go below minY+1 so the platform stays in the world.
+            // This handles ancient cities (bb.minY ≈ -63) whose raw topY = -64 = world floor.
+            int topY = Math.max(bb.minY() - 1, minY + 1);
+            if (topY >= maxY) continue;
 
             float fade = (float)(1.0 - edgeDist / effectivePad);
             double noiseThick = fractalNoise2D(wx * 0.14, wz * 0.14, noiseSeed + 7777L, 3);
-            int thickness = Math.max(1, (int)(fade * (3 + noiseThick * 5)));
+            // Underground structures get a thicker stone floor so they're accessible.
+            int baseThick = bb.minY() < 0 ? 6 : 3;
+            int thickness = Math.max(1, (int)(fade * (baseThick + noiseThick * 5)));
 
             int botY = Math.max(topY - thickness, minY);
             for (int y = botY; y <= topY; y++) {
