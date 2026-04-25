@@ -93,6 +93,15 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
 
         List<IslandData> islands = gatherNearbyIslands(startX + 8, startZ + 8, islandRand);
         List<BoundingBox> structurePlatforms = gatherStructurePlatforms(chunk, structureManager, region);
+        // Only surface structures need no-build zones and contour platforms.
+        // Underground structures (trial chambers bb.minY≈-40, ancient cities bb.minY≈-62)
+        // must be left out — their BBs intersect island bodies and the no-build zone
+        // would punch a rectangular hole all the way through to the surface.
+        // Underground structures carve their own interiors via applyBiomeDecoration anyway.
+        List<BoundingBox> surfacePlatforms = new ArrayList<>();
+        for (BoundingBox bb : structurePlatforms) {
+            if (bb.minY() >= 20) surfacePlatforms.add(bb);
+        }
 
         // Islands whose center biome is ocean get a central lake carved in them.
         // Use biomeSource directly (no WorldGenRegion deadlock risk at distant coords).
@@ -119,8 +128,8 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                         chunk.setBlockState(new BlockPos(wx, y, wz), Blocks.AIR.defaultBlockState(), false);
                 }
 
-                int islandTop   = fillIslandColumn(chunk, wx, wz, minY, maxY, islands, noiseSeed, structurePlatforms);
-                int platformTop = fillStructurePlatformColumn(chunk, wx, wz, minY, maxY, structurePlatforms, noiseSeed);
+                int islandTop   = fillIslandColumn(chunk, wx, wz, minY, maxY, islands, noiseSeed, surfacePlatforms);
+                int platformTop = fillStructurePlatformColumn(chunk, wx, wz, minY, maxY, surfacePlatforms, noiseSeed);
                 topYCache[lx * 16 + lz] = Math.max(islandTop, platformTop);
             }
         }
@@ -411,40 +420,55 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
 
     /**
      * Collects bounding boxes of all structures relevant to this chunk.
-     * Tries StructureManager for every section-Y (deep structures like ancient
-     * cities live at section Y=-4, not 0), then falls back to a direct chunk
-     * read from the WorldGenRegion to handle chunks near the region boundary.
+     * Primary path: scans chunk starts in a ±3-chunk neighbourhood so the
+     * contour pad generates seamlessly even in chunks that are adjacent to a
+     * structure BB but carry no reference.  Fallback path: StructureManager
+     * section-Y scan for large/deep structures whose start chunk is farther away.
      */
     private List<BoundingBox> gatherStructurePlatforms(ChunkAccess chunk,
                                                         StructureManager structureManager,
                                                         WorldGenRegion region) {
         List<BoundingBox> result = new ArrayList<>();
+        ChunkPos cp0 = chunk.getPos();
 
-        for (StructureStart start : chunk.getAllStarts().values()) {
-            if (start.isValid()) result.add(start.getBoundingBox());
+        // Primary: scan all chunk starts within a 3-chunk radius.
+        // This covers the contour-pad zone (≤16 blocks) AND fixes the chunk-cutoff
+        // bug where a chunk adjacent to a structure BB carries no reference and the
+        // vanilla reference-only lookup therefore misses the BB entirely.
+        for (int dcx = -3; dcx <= 3; dcx++) {
+            for (int dcz = -3; dcz <= 3; dcz++) {
+                try {
+                    ChunkAccess nbr = region.getChunk(cp0.x + dcx, cp0.z + dcz);
+                    if (nbr == null) continue;
+                    for (StructureStart s : nbr.getAllStarts().values()) {
+                        if (s.isValid()) result.add(s.getBoundingBox());
+                    }
+                } catch (Exception ignored) {}
+            }
         }
 
+        // Fallback: StructureManager reference lookup for large/deep structures whose
+        // start chunk is more than 3 chunks away (e.g. trial chambers, ancient cities).
+        // Scans every section Y so deep structures (section Y=-4) are not missed.
         for (Map.Entry<Structure, LongSet> entry : chunk.getAllReferences().entrySet()) {
             Structure structure = entry.getKey();
             for (long packed : entry.getValue().toLongArray()) {
                 try {
                     ChunkPos cp = new ChunkPos(packed);
                     boolean found = false;
-                    // Scan all section Y values so we don't miss deep structures
-                    // (ancient cities at Y≈-52 live in section Y=-4, not 0).
                     for (int sy = -5; sy <= 20 && !found; sy++) {
-                        List<StructureStart> starts =
-                                structureManager.startsForStructure(SectionPos.of(cp, sy), structure);
-                        for (StructureStart s : starts) {
+                        for (StructureStart s : structureManager.startsForStructure(SectionPos.of(cp, sy), structure)) {
                             if (s.isValid()) { result.add(s.getBoundingBox()); found = true; }
                         }
                     }
                     if (!found) {
-                        ChunkAccess startChunk = region.getChunk(cp.x, cp.z);
-                        if (startChunk != null) {
-                            StructureStart s = startChunk.getAllStarts().get(structure);
-                            if (s != null && s.isValid()) result.add(s.getBoundingBox());
-                        }
+                        try {
+                            ChunkAccess startChunk = region.getChunk(cp.x, cp.z);
+                            if (startChunk != null) {
+                                StructureStart s = startChunk.getAllStarts().get(structure);
+                                if (s != null && s.isValid()) result.add(s.getBoundingBox());
+                            }
+                        } catch (Exception ignored2) {}
                     }
                 } catch (Exception ignored) {}
             }
