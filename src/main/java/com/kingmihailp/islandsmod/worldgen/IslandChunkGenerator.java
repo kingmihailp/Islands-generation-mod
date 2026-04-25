@@ -344,14 +344,14 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         }
         // For positions with no island, return a sensible height per heightmap type
         // so vanilla structure placement anchors at realistic positions:
-        //   OCEAN_FLOOR_* → 46  (typical seafloor, below sea_level 63)
+        //   OCEAN_FLOOR_* → 62  (just below sea_level 63; satisfies the validator
+        //                        check "floor < sea_level" while placing shipwrecks
+        //                        close to island surface instead of 15-20 blocks below)
         //   everything else → 63 (sea surface / terrain surface)
-        // Returning 63 for OCEAN_FLOOR would equal sea_level, causing validators
-        // to treat the position as "no ocean" and discard shipwreck placements.
         if (highest != Integer.MIN_VALUE) return highest;
         boolean isFloor = (types == Heightmap.Types.OCEAN_FLOOR_WG
                         || types == Heightmap.Types.OCEAN_FLOOR);
-        return isFloor ? 46 : 63;
+        return isFloor ? 62 : 63;
     }
 
     @Override
@@ -477,18 +477,11 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     }
 
     /**
-     * Builds an organic stone contour shelf around the structure's perimeter.
-     *
-     * Three key design decisions vs the old approach:
-     *  1. CONTOUR only — columns inside the BB footprint are skipped; only the
-     *     exterior ring receives stone so the structure interior is untouched.
-     *  2. Top flush with structure floor — topY = bb.minY() so the shelf is at
-     *     the same height as the structure floor and players can step straight
-     *     from any door/exit onto the island without a vertical drop.
-     *  3. No chunk seams — effectivePad blends angle-based noise (gives each
-     *     structure a unique organic silhouette) with position-based noise
-     *     (eliminates the hard seam that appeared when pure angle noise changed
-     *     sign across a chunk boundary).
+     * Builds an organic stone island under and around a structure.
+     * Fills interior columns (edgeDist=0) at full thickness so open structures
+     * like villages receive terrain under their buildings.  Exterior columns
+     * taper off with a noise-modulated pad radius.  topY = bb.minY() ensures
+     * the island surface is flush with the structure floor.
      */
     private int fillStructurePlatformColumn(ChunkAccess chunk, int wx, int wz,
                                              int minY, int maxY,
@@ -496,13 +489,13 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         int columnTopY = Integer.MIN_VALUE;
 
         for (BoundingBox bb : platforms) {
-            // ── Part 1: contour only ─────────────────────────────────────────
-            // Columns inside the structure's footprint are left untouched;
-            // the structure places its own blocks there via applyBiomeDecoration.
-            if (wx >= bb.minX() && wx <= bb.maxX()
-                    && wz >= bb.minZ() && wz <= bb.maxZ()) continue;
-
-            // Distance from this column to the nearest point on the BB edge
+            // Distance from this column to the nearest point on the BB edge.
+            // For interior columns edgeDist == 0, so they always pass the pad
+            // check below and receive the full foundation thickness at bb.minY().
+            // This is intentional: open structures like villages need stone under
+            // their buildings, not just around the perimeter.  The no-build zone
+            // in fillIslandColumn already prevents island stone at Y >= bb.minY()
+            // inside the BB, so the structure template's own blocks are unaffected.
             double nearX = Math.max(bb.minX(), Math.min(wx, bb.maxX()));
             double nearZ = Math.max(bb.minZ(), Math.min(wz, bb.maxZ()));
             double dx = wx - nearX, dz = wz - nearZ;
