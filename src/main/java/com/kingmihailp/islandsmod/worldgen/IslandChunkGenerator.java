@@ -481,15 +481,19 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     private List<StructureInfo> gatherStructurePlatforms(ChunkAccess chunk,
                                                           StructureManager structureManager,
                                                           WorldGenRegion region) {
-        List<StructureInfo> result = new ArrayList<>();
+        // Use a LinkedHashSet for automatic deduplication — the same structure
+        // start is discovered multiple times when the primary radius is large.
+        // StructureInfo is a record so equals/hashCode cover all three fields.
+        java.util.Set<StructureInfo> seen = new java.util.LinkedHashSet<>();
         ChunkPos cp0 = chunk.getPos();
 
-        // Primary: scan all chunk starts within a 3-chunk radius.
-        // This covers the contour-pad zone (≤16 blocks) AND fixes the chunk-cutoff
-        // bug where a chunk adjacent to a structure BB carries no reference and the
-        // vanilla reference-only lookup therefore misses the BB entirely.
-        for (int dcx = -3; dcx <= 3; dcx++) {
-            for (int dcz = -3; dcz <= 3; dcz++) {
+        // Primary: scan all chunk starts within an 8-chunk radius.
+        // Large structures (villages, mansions) have BBs up to 200×200 blocks
+        // (≈13 chunks).  The start chunk can be up to ~8 chunks from any BB
+        // edge, so ±3 was insufficient and caused the contour/interior to be
+        // cut off at chunk lines far from the structure centre.
+        for (int dcx = -8; dcx <= 8; dcx++) {
+            for (int dcz = -8; dcz <= 8; dcz++) {
                 try {
                     ChunkAccess nbr = region.getChunk(cp0.x + dcx, cp0.z + dcz);
                     if (nbr == null) continue;
@@ -498,15 +502,15 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                     int sx = nbr.getPos().getMinBlockX() + 8;
                     int sz = nbr.getPos().getMinBlockZ() + 8;
                     for (StructureStart s : nbr.getAllStarts().values()) {
-                        if (s.isValid()) result.add(new StructureInfo(s.getBoundingBox(), sx, sz));
+                        if (s.isValid()) seen.add(new StructureInfo(s.getBoundingBox(), sx, sz));
                     }
                 } catch (Exception ignored) {}
             }
         }
 
-        // Fallback: StructureManager reference lookup for large/deep structures whose
-        // start chunk is more than 3 chunks away (e.g. trial chambers, ancient cities).
-        // Scans every section Y so deep structures (section Y=-4) are not missed.
+        // Fallback: StructureManager reference lookup for underground/very large
+        // structures whose start chunk may still be outside the ±8 primary scan
+        // (trial chambers, ancient cities).  Scans every section Y.
         for (Map.Entry<Structure, LongSet> entry : chunk.getAllReferences().entrySet()) {
             Structure structure = entry.getKey();
             for (long packed : entry.getValue().toLongArray()) {
@@ -519,7 +523,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                     for (int sy = -5; sy <= 20 && !found; sy++) {
                         for (StructureStart s : structureManager.startsForStructure(SectionPos.of(cp, sy), structure)) {
                             if (s.isValid()) {
-                                result.add(new StructureInfo(s.getBoundingBox(), sx, sz));
+                                seen.add(new StructureInfo(s.getBoundingBox(), sx, sz));
                                 found = true;
                             }
                         }
@@ -530,14 +534,14 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                             if (startChunk != null) {
                                 StructureStart s = startChunk.getAllStarts().get(structure);
                                 if (s != null && s.isValid())
-                                    result.add(new StructureInfo(s.getBoundingBox(), sx, sz));
+                                    seen.add(new StructureInfo(s.getBoundingBox(), sx, sz));
                             }
                         } catch (Exception ignored2) {}
                     }
                 } catch (Exception ignored) {}
             }
         }
-        return result;
+        return new ArrayList<>(seen);
     }
 
     /**
