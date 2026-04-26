@@ -118,7 +118,13 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
 
         for (StructureInfo si : structureInfos) {
             BoundingBox bb     = si.bb();
-            if (bb.minY() < 20) continue;
+            // Skip structures whose entire BB sits below Y=30: these are true
+            // underground structures (strongholds, modded cave dungeons).
+            // Filtering on bb.maxY() instead of bb.minY() lets modded surface
+            // structures through even when they have deep foundations (minY < 20).
+            // Trial chambers and ancient cities are already disabled via JSON, so
+            // the earlier bb.minY() guard is no longer needed.
+            if (bb.maxY() < 30) continue;
             int spawnX = si.spawnX();
             int spawnZ = si.spawnZ();
 
