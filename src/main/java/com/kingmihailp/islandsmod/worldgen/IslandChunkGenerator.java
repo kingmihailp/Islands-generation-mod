@@ -65,10 +65,15 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     private static final int[][] DIRS4 = {{1,0},{-1,0},{0,1},{0,-1}};
 
     // ── Structure platform descriptor ─────────────────────────────────────────
-    // floorY is the island surface at the BB centre — the Y where getBaseHeight()
-    // placed the structure.  This is NOT bb.minY(), which includes underground BB
-    // extensions and causes the structure to appear to float above its island.
+    // floorY = island surface at the structure's spawn point (reference chunk
+    // centre), which is exactly the Y getBaseHeight() returned when the structure
+    // was placed.  Using bb.minY() or BB-centre samples is wrong for large
+    // structures whose spawn point is offset from the geometric BB centre.
     private record PlatformDef(BoundingBox bb, int floorY) {}
+
+    // Carries BB + the reference-chunk spawn point so buildSurface can query
+    // approximateTopY() at the right location instead of the BB centre.
+    private record StructureInfo(BoundingBox bb, int spawnX, int spawnZ) {}
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -97,61 +102,49 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         PositionalRandomFactory islandRand = randomState.getOrCreateRandomFactory(RL_ISLANDS);
         long noiseSeed = randomState.getOrCreateRandomFactory(RL_TERRAIN).at(0, 0, 0).nextLong();
 
-        List<IslandData> islands = gatherNearbyIslands(startX + 8, startZ + 8, islandRand);
-        List<BoundingBox> structurePlatforms = gatherStructurePlatforms(chunk, structureManager, region);
+        List<IslandData>   islands        = gatherNearbyIslands(startX + 8, startZ + 8, islandRand);
+        List<StructureInfo> structureInfos = gatherStructurePlatforms(chunk, structureManager, region);
+
         // Build PlatformDef list for surface structures only (bb.minY >= 20).
         // Underground structures (trial chambers, ancient cities) are excluded — their
         // large BBs would punch rectangular holes through islands.
-        // floorY = island surface at the BB centre, which is where getBaseHeight() placed
-        // the structure.  Using bb.minY() instead would be wrong for any structure whose
-        // template includes underground extensions (pilager outpost foundation, etc.).
+        //
+        // floorY is sampled at the structure's REFERENCE-CHUNK CENTRE (spawnX/spawnZ),
+        // which is exactly where getBaseHeight() was queried when the structure was
+        // placed.  Previous approaches (BB centre, 5-point cross) failed for large
+        // structures (villages, mansions) whose spawn point is far from the BB centre.
         List<PlatformDef> surfacePlatforms = new ArrayList<>();
         List<IslandData>  augmentedIslands = new ArrayList<>(islands);
 
-        for (BoundingBox bb : structurePlatforms) {
+        for (StructureInfo si : structureInfos) {
+            BoundingBox bb     = si.bb();
             if (bb.minY() < 20) continue;
-            int cx = (bb.minX() + bb.maxX()) / 2;
-            int cz = (bb.minZ() + bb.maxZ()) / 2;
+            int spawnX = si.spawnX();
+            int spawnZ = si.spawnZ();
 
-            // 5-point floorY sampling: BB centre + 4 inset-edge points.
-            // Taking the max (capped at centre+10) handles structures whose spawn
-            // anchor is offset from the geometric BB centre (e.g. villages with a
-            // well that's not centred in the BB).
-            int inset = Math.min(8, Math.min(
-                    (bb.maxX() - bb.minX()) / 4, (bb.maxZ() - bb.minZ()) / 4));
-            int[] sxs = {cx, bb.minX() + inset, bb.maxX() - inset, cx, cx};
-            int[] szs = {cz, cz, cz, bb.minZ() + inset, bb.maxZ() - inset};
-
-            int centerFloor = Integer.MIN_VALUE;
-            int maxFloor    = Integer.MIN_VALUE;
-            for (int si = 0; si < 5; si++) {
-                for (IslandData isl : islands) {
-                    int t = approximateTopY(sxs[si], szs[si], isl, noiseSeed);
-                    if (t > maxFloor) maxFloor = t;
-                    if (si == 0 && t > centerFloor) centerFloor = t;
-                }
+            // Sample the island surface at the exact spawn point.
+            int floorY = Integer.MIN_VALUE;
+            for (IslandData isl : islands) {
+                int t = approximateTopY(spawnX, spawnZ, isl, noiseSeed);
+                if (t > floorY) floorY = t;
             }
 
-            int floorY;
-            if (maxFloor == Integer.MIN_VALUE) {
-                // Void structure — no natural island at any sample point.
-                // Spawn a virtual organic island centred here so fillIslandColumn
-                // generates proper terrain beneath the structure instead of the
-                // flat rectangular platform that fell back to bb.minY().
+            if (floorY == Integer.MIN_VALUE) {
+                // Void structure — no natural island at the spawn point.
+                // Spawn an organic virtual island so fillIslandColumn generates
+                // proper terrain instead of falling back to a flat stone slab.
                 floorY = bb.minY();
-                double R_bb = Math.max((bb.maxX() - bb.minX()) * 0.5,
-                                       (bb.maxZ() - bb.minZ()) * 0.5);
+                // Size the island to cover the BB from the spawn-point perspective.
+                double R_bb_x = Math.max(spawnX - bb.minX(), bb.maxX() - spawnX);
+                double R_bb_z = Math.max(spawnZ - bb.minZ(), bb.maxZ() - spawnZ);
+                double R_bb   = Math.max(Math.max(R_bb_x, R_bb_z), 12.0);
                 double rh  = Math.max(R_bb * 1.7, 24.0);
                 double rv  = Math.max(R_bb * 0.15, 12.0);
                 int    vcy = floorY - (int)(rv * 0.5);
-                augmentedIslands.add(new IslandData(cx, vcy, cz, rh, rv,
+                augmentedIslands.add(new IslandData(spawnX, vcy, spawnZ, rh, rv,
                         0.3, 2.0, 0.85, 0.15, 0.8));
             } else {
-                // Cap at centre+10 to prevent outlier sample points from pushing
-                // floorY far above where the structure actually spawns.
-                if (centerFloor != Integer.MIN_VALUE)
-                    maxFloor = Math.min(maxFloor, centerFloor + 10);
-                floorY = Math.max(maxFloor, bb.minY());
+                floorY = Math.max(floorY, bb.minY());
             }
             surfacePlatforms.add(new PlatformDef(bb, floorY));
         }
@@ -484,10 +477,10 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
      * structure BB but carry no reference.  Fallback path: StructureManager
      * section-Y scan for large/deep structures whose start chunk is farther away.
      */
-    private List<BoundingBox> gatherStructurePlatforms(ChunkAccess chunk,
-                                                        StructureManager structureManager,
-                                                        WorldGenRegion region) {
-        List<BoundingBox> result = new ArrayList<>();
+    private List<StructureInfo> gatherStructurePlatforms(ChunkAccess chunk,
+                                                          StructureManager structureManager,
+                                                          WorldGenRegion region) {
+        List<StructureInfo> result = new ArrayList<>();
         ChunkPos cp0 = chunk.getPos();
 
         // Primary: scan all chunk starts within a 3-chunk radius.
@@ -500,7 +493,9 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                     ChunkAccess nbr = region.getChunk(cp0.x + dcx, cp0.z + dcz);
                     if (nbr == null) continue;
                     for (StructureStart s : nbr.getAllStarts().values()) {
-                        if (s.isValid()) result.add(s.getBoundingBox());
+                        if (s.isValid()) result.add(new StructureInfo(
+                                s.getBoundingBox(),
+                                s.getChunkX() * 16 + 8, s.getChunkZ() * 16 + 8));
                     }
                 } catch (Exception ignored) {}
             }
@@ -517,7 +512,12 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                     boolean found = false;
                     for (int sy = -5; sy <= 20 && !found; sy++) {
                         for (StructureStart s : structureManager.startsForStructure(SectionPos.of(cp, sy), structure)) {
-                            if (s.isValid()) { result.add(s.getBoundingBox()); found = true; }
+                            if (s.isValid()) {
+                                result.add(new StructureInfo(
+                                        s.getBoundingBox(),
+                                        s.getChunkX() * 16 + 8, s.getChunkZ() * 16 + 8));
+                                found = true;
+                            }
                         }
                     }
                     if (!found) {
@@ -525,7 +525,9 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                             ChunkAccess startChunk = region.getChunk(cp.x, cp.z);
                             if (startChunk != null) {
                                 StructureStart s = startChunk.getAllStarts().get(structure);
-                                if (s != null && s.isValid()) result.add(s.getBoundingBox());
+                                if (s != null && s.isValid()) result.add(new StructureInfo(
+                                        s.getBoundingBox(),
+                                        s.getChunkX() * 16 + 8, s.getChunkZ() * 16 + 8));
                             }
                         } catch (Exception ignored2) {}
                     }
