@@ -64,6 +64,12 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     // ── Cardinal directions ───────────────────────────────────────────────────
     private static final int[][] DIRS4 = {{1,0},{-1,0},{0,1},{0,-1}};
 
+    // ── Structure platform descriptor ─────────────────────────────────────────
+    // floorY is the island surface at the BB centre — the Y where getBaseHeight()
+    // placed the structure.  This is NOT bb.minY(), which includes underground BB
+    // extensions and causes the structure to appear to float above its island.
+    private record PlatformDef(BoundingBox bb, int floorY) {}
+
     // ─────────────────────────────────────────────────────────────────────────
 
     public IslandChunkGenerator(BiomeSource biomeSource, Holder<NoiseGeneratorSettings> settings) {
@@ -93,14 +99,27 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
 
         List<IslandData> islands = gatherNearbyIslands(startX + 8, startZ + 8, islandRand);
         List<BoundingBox> structurePlatforms = gatherStructurePlatforms(chunk, structureManager, region);
-        // Only surface structures need no-build zones and contour platforms.
-        // Underground structures (trial chambers bb.minY≈-40, ancient cities bb.minY≈-62)
-        // must be left out — their BBs intersect island bodies and the no-build zone
-        // would punch a rectangular hole all the way through to the surface.
-        // Underground structures carve their own interiors via applyBiomeDecoration anyway.
-        List<BoundingBox> surfacePlatforms = new ArrayList<>();
+        // Build PlatformDef list for surface structures only (bb.minY >= 20).
+        // Underground structures (trial chambers, ancient cities) are excluded — their
+        // large BBs would punch rectangular holes through islands.
+        // floorY = island surface at the BB centre, which is where getBaseHeight() placed
+        // the structure.  Using bb.minY() instead would be wrong for any structure whose
+        // template includes underground extensions (pilager outpost foundation, etc.).
+        List<PlatformDef> surfacePlatforms = new ArrayList<>();
         for (BoundingBox bb : structurePlatforms) {
-            if (bb.minY() >= 20) surfacePlatforms.add(bb);
+            if (bb.minY() < 20) continue;
+            int cx = (bb.minX() + bb.maxX()) / 2;
+            int cz = (bb.minZ() + bb.maxZ()) / 2;
+            int floorY = Integer.MIN_VALUE;
+            for (IslandData isl : islands) {
+                int t = approximateTopY(cx, cz, isl, noiseSeed);
+                if (t > floorY) floorY = t;
+            }
+            // For structures placed in voids (no island at BB centre), fall back to
+            // bb.minY() so at least the structure BB bottom is supported.
+            if (floorY == Integer.MIN_VALUE) floorY = bb.minY();
+            else floorY = Math.max(floorY, bb.minY()); // never below BB
+            surfacePlatforms.add(new PlatformDef(bb, floorY));
         }
 
         // Islands whose center biome is ocean get a central lake carved in them.
@@ -209,7 +228,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     private int fillIslandColumn(ChunkAccess chunk, int wx, int wz,
                                   int minY, int maxY,
                                   List<IslandData> islands, long noiseSeed,
-                                  List<BoundingBox> noBuildZones) {
+                                  List<PlatformDef> noBuildZones) {
         int columnTopY = Integer.MIN_VALUE;
 
         for (IslandData isl : islands) {
@@ -256,11 +275,17 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
             // that structure templates can place their own air/blocks in
             // applyBiomeDecoration without island stone creating holes.
             for (int y = iBot; y <= iTop; y++) {
+                // Skip blocks strictly ABOVE the structure floor inside the BB.
+                // Allowing the island to fill up to floorY (inclusive) gives the
+                // structure organic terrain beneath it; blocking only y > floorY
+                // preserves the empty space the structure template needs for its
+                // walls, rooms, and air blocks above floor level.
                 boolean inBB = false;
-                for (BoundingBox nb : noBuildZones) {
-                    if (wx >= nb.minX() && wx <= nb.maxX()
-                            && wz >= nb.minZ() && wz <= nb.maxZ()
-                            && y  >= nb.minY() && y  <= nb.maxY()) {
+                for (PlatformDef pd : noBuildZones) {
+                    if (wx >= pd.bb().minX() && wx <= pd.bb().maxX()
+                            && wz >= pd.bb().minZ() && wz <= pd.bb().maxZ()
+                            && y  >  pd.floorY()
+                            && y  <= pd.bb().maxY()) {
                         inBB = true;
                         break;
                     }
@@ -477,59 +502,86 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     }
 
     /**
-     * Builds an organic stone island under and around a structure.
-     * Fills interior columns (edgeDist=0) at full thickness so open structures
-     * like villages receive terrain under their buildings.  Exterior columns
-     * taper off with a noise-modulated pad radius.  topY = bb.minY() ensures
-     * the island surface is flush with the structure floor.
+     * Generates the island base for a surface structure.
+     *
+     * Interior columns (inside the BB footprint): the organic island from
+     * fillIslandColumn already fills up to floorY.  This method adds only a
+     * 1-2 block "floor cap" at floorY to guarantee the structure floor is
+     * supported even in void positions where no natural island reaches there.
+     *
+     * Exterior columns (outside the BB): a noise-shaped contour shelf that
+     * starts flush at floorY where it meets the BB edge and tapers downward
+     * (0-6 block slope) as it extends outward.  The irregular effectivePad
+     * radius and the slope together give an organic appearance rather than a
+     * flat rectangular disc.
      */
     private int fillStructurePlatformColumn(ChunkAccess chunk, int wx, int wz,
                                              int minY, int maxY,
-                                             List<BoundingBox> platforms, long noiseSeed) {
+                                             List<PlatformDef> platforms, long noiseSeed) {
         int columnTopY = Integer.MIN_VALUE;
 
-        for (BoundingBox bb : platforms) {
-            // Distance from this column to the nearest point on the BB edge.
-            // For interior columns edgeDist == 0, so they always pass the pad
-            // check below and receive the full foundation thickness at bb.minY().
-            // This is intentional: open structures like villages need stone under
-            // their buildings, not just around the perimeter.  The no-build zone
-            // in fillIslandColumn already prevents island stone at Y >= bb.minY()
-            // inside the BB, so the structure template's own blocks are unaffected.
+        for (PlatformDef pd : platforms) {
+            BoundingBox bb  = pd.bb();
+            int         floorY = pd.floorY();
+
+            boolean interior = (wx >= bb.minX() && wx <= bb.maxX()
+                             && wz >= bb.minZ() && wz <= bb.maxZ());
+
+            if (interior) {
+                // Thin floor cap: at most 2 blocks, only where air remains.
+                // The island fills organically up to floorY here (no-build zone
+                // allows y <= floorY), so usually nothing needs placing.
+                int topYi = Math.max(floorY, minY + 1);
+                if (topYi >= maxY) continue;
+                int botYi = Math.max(topYi - 1, minY);
+                for (int y = botYi; y <= topYi; y++) {
+                    BlockPos pos = new BlockPos(wx, y, wz);
+                    if (chunk.getBlockState(pos).isAir()) {
+                        BlockState bs = y < DEEPSLATE_TOP
+                                ? Blocks.DEEPSLATE.defaultBlockState()
+                                : Blocks.STONE.defaultBlockState();
+                        chunk.setBlockState(pos, bs, false);
+                    }
+                }
+                if (topYi > columnTopY) columnTopY = topYi;
+                continue;
+            }
+
+            // ── Exterior contour ──────────────────────────────────────────────
             double nearX = Math.max(bb.minX(), Math.min(wx, bb.maxX()));
             double nearZ = Math.max(bb.minZ(), Math.min(wz, bb.maxZ()));
             double dx = wx - nearX, dz = wz - nearZ;
             double edgeDist = Math.sqrt(dx * dx + dz * dz);
 
-            // ── Part 2: chunk-seam-free organic pad ──────────────────────────
-            // Angle-based component → unique silhouette per structure position.
-            double cx = (bb.minX() + bb.maxX()) * 0.5;
-            double cz = (bb.minZ() + bb.maxZ()) * 0.5;
-            double angle = Math.atan2(wz - cz, wx - cx);
-            double angNoise = fractalNoise2D(
+            // Organic pad radius: angle-based noise gives a unique silhouette,
+            // position-based noise removes chunk-boundary seams.
+            double cx     = (bb.minX() + bb.maxX()) * 0.5;
+            double cz     = (bb.minZ() + bb.maxZ()) * 0.5;
+            double angle  = Math.atan2(wz - cz, wx - cx);
+            double angN   = fractalNoise2D(
                     Math.cos(angle) * 4.0 + cx * 0.014,
                     Math.sin(angle) * 4.0 + cz * 0.014,
                     noiseSeed + 9999L, 4);
-            // Position-based component → smooths the transition at chunk edges.
-            double posNoise = fractalNoise2D(wx * 0.055, wz * 0.055, noiseSeed + 8888L, 3);
-            // Coefficients sum to 1.0 → range is [basePad×0.42, basePad×1.0]
-            double basePad = bb.minY() < 0 ? 16.0 : 12.0;
-            double effectivePad = basePad * (0.42 + angNoise * 0.40 + posNoise * 0.18);
+            double posN   = fractalNoise2D(wx * 0.055, wz * 0.055, noiseSeed + 8888L, 3);
+            double effectivePad = 12.0 * (0.42 + angN * 0.40 + posN * 0.18); // [5, 12] blocks
 
             if (edgeDist > effectivePad) continue;
 
-            // ── Part 3: topY flush with structure floor ───────────────────────
-            // The shelf top equals bb.minY() so it is walkable from any
-            // ground-level exit of the structure without a step down.
-            int topY = Math.max(bb.minY(), minY + 1);
+            // Slope topY gently downward from the BB edge (floorY) toward the
+            // contour boundary (floorY - 3 to floorY - 6).  This avoids the
+            // flat disc appearance and gives an organic tapered ledge.
+            double slopeFactor = edgeDist / effectivePad;            // 0..1
+            double slopeNoise  = fractalNoise2D(wx * 0.08, wz * 0.08, noiseSeed + 6666L, 2);
+            int topY = Math.max(
+                    (int)(floorY - slopeFactor * (3.0 + slopeNoise * 3.0)),
+                    minY + 1);
             if (topY >= maxY) continue;
 
-            float fade = (float)(1.0 - edgeDist / effectivePad);
+            float  fade      = (float)(1.0 - slopeFactor);
             double noiseThick = fractalNoise2D(wx * 0.10, wz * 0.10, noiseSeed + 7777L, 3);
-            int baseThick = bb.minY() < 0 ? 5 : 4;
-            int thickness = Math.max(1, (int)(fade * (baseThick + noiseThick * 4)));
+            int    thickness  = Math.max(1, (int)(fade * (4 + noiseThick * 4)));
+            int    botY       = Math.max(topY - thickness, minY);
 
-            int botY = Math.max(topY - thickness, minY);
             for (int y = botY; y <= topY; y++) {
                 BlockPos pos = new BlockPos(wx, y, wz);
                 if (chunk.getBlockState(pos).isAir()) {
