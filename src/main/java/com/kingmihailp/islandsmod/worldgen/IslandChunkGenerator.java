@@ -492,10 +492,12 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                 try {
                     ChunkAccess nbr = region.getChunk(cp0.x + dcx, cp0.z + dcz);
                     if (nbr == null) continue;
+                    // getAllStarts() returns starts anchored in THIS chunk, so
+                    // nbr.getPos() IS the structure's reference chunk.
+                    int sx = nbr.getPos().getMinBlockX() + 8;
+                    int sz = nbr.getPos().getMinBlockZ() + 8;
                     for (StructureStart s : nbr.getAllStarts().values()) {
-                        if (s.isValid()) result.add(new StructureInfo(
-                                s.getBoundingBox(),
-                                s.getChunkX() * 16 + 8, s.getChunkZ() * 16 + 8));
+                        if (s.isValid()) result.add(new StructureInfo(s.getBoundingBox(), sx, sz));
                     }
                 } catch (Exception ignored) {}
             }
@@ -508,14 +510,15 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
             Structure structure = entry.getKey();
             for (long packed : entry.getValue().toLongArray()) {
                 try {
+                    // packed encodes the reference chunk position.
                     ChunkPos cp = new ChunkPos(packed);
+                    int sx = cp.getMinBlockX() + 8;
+                    int sz = cp.getMinBlockZ() + 8;
                     boolean found = false;
                     for (int sy = -5; sy <= 20 && !found; sy++) {
                         for (StructureStart s : structureManager.startsForStructure(SectionPos.of(cp, sy), structure)) {
                             if (s.isValid()) {
-                                result.add(new StructureInfo(
-                                        s.getBoundingBox(),
-                                        s.getChunkX() * 16 + 8, s.getChunkZ() * 16 + 8));
+                                result.add(new StructureInfo(s.getBoundingBox(), sx, sz));
                                 found = true;
                             }
                         }
@@ -525,9 +528,8 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                             ChunkAccess startChunk = region.getChunk(cp.x, cp.z);
                             if (startChunk != null) {
                                 StructureStart s = startChunk.getAllStarts().get(structure);
-                                if (s != null && s.isValid()) result.add(new StructureInfo(
-                                        s.getBoundingBox(),
-                                        s.getChunkX() * 16 + 8, s.getChunkZ() * 16 + 8));
+                                if (s != null && s.isValid())
+                                    result.add(new StructureInfo(s.getBoundingBox(), sx, sz));
                             }
                         } catch (Exception ignored2) {}
                     }
