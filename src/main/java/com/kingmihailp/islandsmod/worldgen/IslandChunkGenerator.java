@@ -106,19 +106,53 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         // the structure.  Using bb.minY() instead would be wrong for any structure whose
         // template includes underground extensions (pilager outpost foundation, etc.).
         List<PlatformDef> surfacePlatforms = new ArrayList<>();
+        List<IslandData>  augmentedIslands = new ArrayList<>(islands);
+
         for (BoundingBox bb : structurePlatforms) {
             if (bb.minY() < 20) continue;
             int cx = (bb.minX() + bb.maxX()) / 2;
             int cz = (bb.minZ() + bb.maxZ()) / 2;
-            int floorY = Integer.MIN_VALUE;
-            for (IslandData isl : islands) {
-                int t = approximateTopY(cx, cz, isl, noiseSeed);
-                if (t > floorY) floorY = t;
+
+            // 5-point floorY sampling: BB centre + 4 inset-edge points.
+            // Taking the max (capped at centre+10) handles structures whose spawn
+            // anchor is offset from the geometric BB centre (e.g. villages with a
+            // well that's not centred in the BB).
+            int inset = Math.min(8, Math.min(
+                    (bb.maxX() - bb.minX()) / 4, (bb.maxZ() - bb.minZ()) / 4));
+            int[] sxs = {cx, bb.minX() + inset, bb.maxX() - inset, cx, cx};
+            int[] szs = {cz, cz, cz, bb.minZ() + inset, bb.maxZ() - inset};
+
+            int centerFloor = Integer.MIN_VALUE;
+            int maxFloor    = Integer.MIN_VALUE;
+            for (int si = 0; si < 5; si++) {
+                for (IslandData isl : islands) {
+                    int t = approximateTopY(sxs[si], szs[si], isl, noiseSeed);
+                    if (t > maxFloor) maxFloor = t;
+                    if (si == 0 && t > centerFloor) centerFloor = t;
+                }
             }
-            // For structures placed in voids (no island at BB centre), fall back to
-            // bb.minY() so at least the structure BB bottom is supported.
-            if (floorY == Integer.MIN_VALUE) floorY = bb.minY();
-            else floorY = Math.max(floorY, bb.minY()); // never below BB
+
+            int floorY;
+            if (maxFloor == Integer.MIN_VALUE) {
+                // Void structure — no natural island at any sample point.
+                // Spawn a virtual organic island centred here so fillIslandColumn
+                // generates proper terrain beneath the structure instead of the
+                // flat rectangular platform that fell back to bb.minY().
+                floorY = bb.minY();
+                double R_bb = Math.max((bb.maxX() - bb.minX()) * 0.5,
+                                       (bb.maxZ() - bb.minZ()) * 0.5);
+                double rh  = Math.max(R_bb * 1.7, 24.0);
+                double rv  = Math.max(R_bb * 0.15, 12.0);
+                int    vcy = floorY - (int)(rv * 0.5);
+                augmentedIslands.add(new IslandData(cx, vcy, cz, rh, rv,
+                        0.3, 2.0, 0.85, 0.15, 0.8));
+            } else {
+                // Cap at centre+10 to prevent outlier sample points from pushing
+                // floorY far above where the structure actually spawns.
+                if (centerFloor != Integer.MIN_VALUE)
+                    maxFloor = Math.min(maxFloor, centerFloor + 10);
+                floorY = Math.max(maxFloor, bb.minY());
+            }
             surfacePlatforms.add(new PlatformDef(bb, floorY));
         }
 
@@ -147,7 +181,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                         chunk.setBlockState(new BlockPos(wx, y, wz), Blocks.AIR.defaultBlockState(), false);
                 }
 
-                int islandTop   = fillIslandColumn(chunk, wx, wz, minY, maxY, islands, noiseSeed, surfacePlatforms);
+                int islandTop   = fillIslandColumn(chunk, wx, wz, minY, maxY, augmentedIslands, noiseSeed, surfacePlatforms);
                 int platformTop = fillStructurePlatformColumn(chunk, wx, wz, minY, maxY, surfacePlatforms, noiseSeed);
                 topYCache[lx * 16 + lz] = Math.max(islandTop, platformTop);
             }
