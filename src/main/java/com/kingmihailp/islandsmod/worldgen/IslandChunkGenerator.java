@@ -130,10 +130,11 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
             }
 
             if (floorY == Integer.MIN_VALUE) {
-                // Void structure — no natural island at the spawn point.
-                // Spawn an organic virtual island so fillIslandColumn generates
-                // proper terrain instead of falling back to a flat stone slab.
-                floorY = bb.minY();
+                // Void structure — getBaseHeight returned the fallback (63 for
+                // WORLD_SURFACE_WG), so the structure floor sits at Y=63.
+                // Using bb.minY() would be wrong: bb.minY() < 63 for any structure
+                // with underground foundations, producing a gap below the floor.
+                floorY = 63;
                 // Size the island to cover the BB from the spawn-point perspective.
                 double R_bb_x = Math.max(spawnX - bb.minX(), bb.maxX() - spawnX);
                 double R_bb_z = Math.max(spawnZ - bb.minZ(), bb.maxZ() - spawnZ);
@@ -566,12 +567,14 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                              && wz >= bb.minZ() && wz <= bb.maxZ());
 
             if (interior) {
-                // Thin floor cap: at most 2 blocks, only where air remains.
-                // The island fills organically up to floorY here (no-build zone
-                // allows y <= floorY), so usually nothing needs placing.
-                int topYi = Math.max(floorY, minY + 1);
-                if (topYi >= maxY) continue;
-                int botYi = Math.max(topYi - 1, minY);
+                // Fill from the BB bottom to floorY so there is no gap between
+                // the natural island terrain and the structure floor.
+                // fillIslandColumn already ran, so isAir() skips filled blocks.
+                // The structure template (applyBiomeDecoration) runs afterwards
+                // and carves its own rooms/air into this foundation stone.
+                int topYi = floorY;
+                if (topYi < minY + 1 || topYi >= maxY) continue;
+                int botYi = Math.max(bb.minY(), minY);
                 for (int y = botYi; y <= topYi; y++) {
                     BlockPos pos = new BlockPos(wx, y, wz);
                     if (chunk.getBlockState(pos).isAir()) {
