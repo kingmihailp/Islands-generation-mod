@@ -1,0 +1,12 @@
+{
+  "structures": [
+    { "structure": "terralith:underground/oak_cabin", "weight": 1 }
+  ],
+  "placement": {
+    "type": "minecraft:random_spread",
+    "spread_type": "linear",
+    "spacing": 1000,
+    "separation": 0,
+    "salt": 47291836
+  }
+}
