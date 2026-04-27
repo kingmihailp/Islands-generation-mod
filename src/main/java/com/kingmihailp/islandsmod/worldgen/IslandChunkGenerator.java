@@ -6,6 +6,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.SectionPos;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.WorldGenRegion;
@@ -58,8 +59,12 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     private static final int DEEPSLATE_TOP = -8;
 
     // ── Resource keys ─────────────────────────────────────────────────────────
-    private static final ResourceLocation RL_ISLANDS = ResourceLocation.fromNamespaceAndPath("islandsmod", "islands");
-    private static final ResourceLocation RL_TERRAIN  = ResourceLocation.fromNamespaceAndPath("islandsmod", "terrain_noise");
+    private static final ResourceLocation RL_ISLANDS    = ResourceLocation.fromNamespaceAndPath("islandsmod", "islands");
+    private static final ResourceLocation RL_TERRAIN    = ResourceLocation.fromNamespaceAndPath("islandsmod", "terrain_noise");
+
+    // ── Structures that must never receive an island or platform ──────────────
+    // skyvillages:skyvillage already floats; an island beneath it is unwanted.
+    private static final ResourceLocation RL_SKYVILLAGE = ResourceLocation.fromNamespaceAndPath("skyvillages", "skyvillage");
 
     // ── Cardinal directions ───────────────────────────────────────────────────
     private static final int[][] DIRS4 = {{1,0},{-1,0},{0,1},{0,-1}};
@@ -73,7 +78,8 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
 
     // Carries BB + the reference-chunk spawn point so buildSurface can query
     // approximateTopY() at the right location instead of the BB centre.
-    private record StructureInfo(BoundingBox bb, int spawnX, int spawnZ) {}
+    // id may be null for structures not found in the registry (treated as unknown).
+    private record StructureInfo(BoundingBox bb, int spawnX, int spawnZ, ResourceLocation id) {}
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -125,6 +131,8 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
             // Trial chambers and ancient cities are already disabled via JSON, so
             // the earlier bb.minY() guard is no longer needed.
             if (bb.maxY() < 30) continue;
+            // Sky-floating structures must not receive an island or platform.
+            if (RL_SKYVILLAGE.equals(si.id())) continue;
             int spawnX = si.spawnX();
             int spawnZ = si.spawnZ();
 
@@ -511,6 +519,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         // StructureInfo is a record so equals/hashCode cover all three fields.
         java.util.Set<StructureInfo> seen = new java.util.LinkedHashSet<>();
         ChunkPos cp0 = chunk.getPos();
+        var structReg = region.registryAccess().registryOrThrow(Registries.STRUCTURE);
 
         // Primary: scan all chunk starts within an 8-chunk radius.
         // Large structures (villages, mansions) have BBs up to 200×200 blocks
@@ -527,7 +536,8 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                     int sx = nbr.getPos().getMinBlockX() + 8;
                     int sz = nbr.getPos().getMinBlockZ() + 8;
                     for (StructureStart s : nbr.getAllStarts().values()) {
-                        if (s.isValid()) seen.add(new StructureInfo(s.getBoundingBox(), sx, sz));
+                        if (s.isValid()) seen.add(new StructureInfo(s.getBoundingBox(), sx, sz,
+                                structReg.getKey(s.getStructure())));
                     }
                 } catch (Exception ignored) {}
             }
@@ -538,6 +548,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         // (trial chambers, ancient cities).  Scans every section Y.
         for (Map.Entry<Structure, LongSet> entry : chunk.getAllReferences().entrySet()) {
             Structure structure = entry.getKey();
+            ResourceLocation structId = structReg.getKey(structure);
             for (long packed : entry.getValue().toLongArray()) {
                 try {
                     // packed encodes the reference chunk position.
@@ -548,7 +559,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                     for (int sy = -5; sy <= 20 && !found; sy++) {
                         for (StructureStart s : structureManager.startsForStructure(SectionPos.of(cp, sy), structure)) {
                             if (s.isValid()) {
-                                seen.add(new StructureInfo(s.getBoundingBox(), sx, sz));
+                                seen.add(new StructureInfo(s.getBoundingBox(), sx, sz, structId));
                                 found = true;
                             }
                         }
@@ -559,7 +570,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                             if (startChunk != null) {
                                 StructureStart s = startChunk.getAllStarts().get(structure);
                                 if (s != null && s.isValid())
-                                    seen.add(new StructureInfo(s.getBoundingBox(), sx, sz));
+                                    seen.add(new StructureInfo(s.getBoundingBox(), sx, sz, structId));
                             }
                         } catch (Exception ignored2) {}
                     }
