@@ -583,16 +583,15 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     /**
      * Generates the island base for a surface structure.
      *
-     * Interior columns (inside the BB footprint): the organic island from
-     * fillIslandColumn already fills up to floorY.  This method adds only a
-     * 1-2 block "floor cap" at floorY to guarantee the structure floor is
-     * supported even in void positions where no natural island reaches there.
+     * Uses a rounded-rectangle signed distance function (SDF) instead of a hard
+     * rectangular interior/exterior split.  The SDF naturally produces rounded
+     * corners whose radius scales with the BB size (25 % of the smaller half-
+     * dimension, capped at 14 blocks).  Additional fractal noise shifts the
+     * rounded boundary so the silhouette is organic rather than geometric.
      *
-     * Exterior columns (outside the BB): a noise-shaped contour shelf that
-     * starts flush at floorY where it meets the BB edge and tapers downward
-     * (0-6 block slope) as it extends outward.  The irregular effectivePad
-     * radius and the slope together give an organic appearance rather than a
-     * flat rectangular disc.
+     * sdf < 0 (inside rounded rect, after noise): full fill from bb.minY to floorY.
+     * sdf ≥ 0 (exterior contour zone):            tapered shelf that slopes from
+     *          floorY at the rounded edge down to floorY-6 at effectivePad distance.
      */
     private int fillStructurePlatformColumn(ChunkAccess chunk, int wx, int wz,
                                              int minY, int maxY,
@@ -600,18 +599,54 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         int columnTopY = Integer.MIN_VALUE;
 
         for (PlatformDef pd : platforms) {
-            BoundingBox bb  = pd.bb();
+            BoundingBox bb     = pd.bb();
             int         floorY = pd.floorY();
 
-            boolean interior = (wx >= bb.minX() && wx <= bb.maxX()
-                             && wz >= bb.minZ() && wz <= bb.maxZ());
+            double bbCX    = (bb.minX() + bb.maxX()) * 0.5;
+            double bbCZ    = (bb.minZ() + bb.maxZ()) * 0.5;
+            double halfBBW = (bb.maxX() - bb.minX()) * 0.5;
+            double halfBBD = (bb.maxZ() - bb.minZ()) * 0.5;
 
-            if (interior) {
-                // Fill from the BB bottom to floorY so there is no gap between
-                // the natural island terrain and the structure floor.
-                // fillIslandColumn already ran, so isAir() skips filled blocks.
-                // The structure template (applyBiomeDecoration) runs afterwards
-                // and carves its own rooms/air into this foundation stone.
+            // Corner rounding radius: 25 % of the shorter half-dimension, capped.
+            // Small structures get subtle rounding; large ones (villages, mansions)
+            // get up to 14-block rounded corners.
+            double cornerR = Math.min(Math.min(halfBBW, halfBBD) * 0.25, 14.0);
+
+            // Rounded-rectangle SDF — equivalent to Minkowski sum of a rectangle
+            // and a disk of radius cornerR.
+            //   sdf < 0  →  inside the rounded rectangle
+            //   sdf = 0  →  on the rounded boundary
+            //   sdf > 0  →  outside (contour zone)
+            double qx  = Math.abs(wx - bbCX) - halfBBW + cornerR;
+            double qz  = Math.abs(wz - bbCZ) - halfBBD + cornerR;
+            double sdf = Math.min(Math.max(qx, qz), 0.0)
+                       + Math.sqrt(Math.max(qx, 0.0) * Math.max(qx, 0.0)
+                                 + Math.max(qz, 0.0) * Math.max(qz, 0.0))
+                       - cornerR;
+
+            // Organic exterior pad: angle-based noise gives a unique silhouette per
+            // structure, position-based noise prevents chunk-boundary seams.
+            double angle = Math.atan2(wz - bbCZ, wx - bbCX);
+            double angN  = fractalNoise2D(
+                    Math.cos(angle) * 4.0 + bbCX * 0.014,
+                    Math.sin(angle) * 4.0 + bbCZ * 0.014,
+                    noiseSeed + 9999L, 4);
+            double posN  = fractalNoise2D(wx * 0.055, wz * 0.055, noiseSeed + 8888L, 3);
+            double effectivePad = 12.0 * (0.42 + angN * 0.40 + posN * 0.18);
+
+            // Shift the SDF boundary by fractal noise so the interior edge is also
+            // rough rather than a perfect rounded rectangle.
+            double edgeNoise  = fractalNoise2D(wx * 0.09, wz * 0.09, noiseSeed + 11111L, 3);
+            double organicSdf = sdf + (edgeNoise * 2.0 - 1.0) * Math.min(cornerR * 0.5, 4.0);
+
+            double extDist = Math.max(organicSdf, 0.0);
+            if (extDist > effectivePad) continue;
+
+            if (organicSdf < 0.0) {
+                // ── Interior (inside rounded+noisy boundary) ──────────────────
+                // Fill from the BB bottom to floorY so the structure floor is
+                // fully supported.  fillIslandColumn already ran; isAir() skips
+                // blocks that are already stone/deepslate.
                 int topYi = floorY;
                 if (topYi < minY + 1 || topYi >= maxY) continue;
                 int botYi = Math.max(bb.minY(), minY);
@@ -625,54 +660,31 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                     }
                 }
                 if (topYi > columnTopY) columnTopY = topYi;
-                continue;
-            }
+            } else {
+                // ── Exterior contour ──────────────────────────────────────────
+                double slopeFactor = extDist / effectivePad;
+                double slopeNoise  = fractalNoise2D(wx * 0.08, wz * 0.08, noiseSeed + 6666L, 2);
+                int topY = Math.max(
+                        (int)(floorY - slopeFactor * (3.0 + slopeNoise * 3.0)),
+                        minY + 1);
+                if (topY >= maxY) continue;
 
-            // ── Exterior contour ──────────────────────────────────────────────
-            double nearX = Math.max(bb.minX(), Math.min(wx, bb.maxX()));
-            double nearZ = Math.max(bb.minZ(), Math.min(wz, bb.maxZ()));
-            double dx = wx - nearX, dz = wz - nearZ;
-            double edgeDist = Math.sqrt(dx * dx + dz * dz);
+                float  fade       = (float)(1.0 - slopeFactor);
+                double noiseThick = fractalNoise2D(wx * 0.10, wz * 0.10, noiseSeed + 7777L, 3);
+                int    thickness  = Math.max(1, (int)(fade * (4 + noiseThick * 4)));
+                int    botY       = Math.max(topY - thickness, minY);
 
-            // Organic pad radius: angle-based noise gives a unique silhouette,
-            // position-based noise removes chunk-boundary seams.
-            double cx     = (bb.minX() + bb.maxX()) * 0.5;
-            double cz     = (bb.minZ() + bb.maxZ()) * 0.5;
-            double angle  = Math.atan2(wz - cz, wx - cx);
-            double angN   = fractalNoise2D(
-                    Math.cos(angle) * 4.0 + cx * 0.014,
-                    Math.sin(angle) * 4.0 + cz * 0.014,
-                    noiseSeed + 9999L, 4);
-            double posN   = fractalNoise2D(wx * 0.055, wz * 0.055, noiseSeed + 8888L, 3);
-            double effectivePad = 12.0 * (0.42 + angN * 0.40 + posN * 0.18); // [5, 12] blocks
-
-            if (edgeDist > effectivePad) continue;
-
-            // Slope topY gently downward from the BB edge (floorY) toward the
-            // contour boundary (floorY - 3 to floorY - 6).  This avoids the
-            // flat disc appearance and gives an organic tapered ledge.
-            double slopeFactor = edgeDist / effectivePad;            // 0..1
-            double slopeNoise  = fractalNoise2D(wx * 0.08, wz * 0.08, noiseSeed + 6666L, 2);
-            int topY = Math.max(
-                    (int)(floorY - slopeFactor * (3.0 + slopeNoise * 3.0)),
-                    minY + 1);
-            if (topY >= maxY) continue;
-
-            float  fade      = (float)(1.0 - slopeFactor);
-            double noiseThick = fractalNoise2D(wx * 0.10, wz * 0.10, noiseSeed + 7777L, 3);
-            int    thickness  = Math.max(1, (int)(fade * (4 + noiseThick * 4)));
-            int    botY       = Math.max(topY - thickness, minY);
-
-            for (int y = botY; y <= topY; y++) {
-                BlockPos pos = new BlockPos(wx, y, wz);
-                if (chunk.getBlockState(pos).isAir()) {
-                    BlockState bs = y < DEEPSLATE_TOP
-                            ? Blocks.DEEPSLATE.defaultBlockState()
-                            : Blocks.STONE.defaultBlockState();
-                    chunk.setBlockState(pos, bs, false);
+                for (int y = botY; y <= topY; y++) {
+                    BlockPos pos = new BlockPos(wx, y, wz);
+                    if (chunk.getBlockState(pos).isAir()) {
+                        BlockState bs = y < DEEPSLATE_TOP
+                                ? Blocks.DEEPSLATE.defaultBlockState()
+                                : Blocks.STONE.defaultBlockState();
+                        chunk.setBlockState(pos, bs, false);
+                    }
                 }
+                if (topY > columnTopY) columnTopY = topY;
             }
-            if (topY > columnTopY) columnTopY = topY;
         }
         return columnTopY;
     }
