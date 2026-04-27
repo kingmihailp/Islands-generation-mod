@@ -149,7 +149,8 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                 double rv  = Math.max(R_bb * 0.15, 12.0);
                 int    vcy = floorY - (int)(rv * 0.5);
                 augmentedIslands.add(new IslandData(spawnX, vcy, spawnZ, rh, rv,
-                        0.3, 2.0, 0.85, 0.15, 0.8));
+                        0.3, 2.0, 0.85, 0.15, 0.8,
+                        0.32, 0.55, 1.0, 1.0, 0.0));
             } else {
                 floorY = Math.max(floorY, bb.minY());
             }
@@ -267,11 +268,14 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
 
         for (IslandData isl : islands) {
 
-            // ── 1. Domain warping ────────────────────────────────────────────
-            double ws  = 0.030;
-            double wr  = isl.rh * isl.warpF;
-            double swx = wx + (fractalNoise2D(wx * ws,       wz * ws,       noiseSeed + 100L, 4) * 2 - 1) * wr;
-            double swz = wz + (fractalNoise2D(wx * ws + 500, wz * ws + 500, noiseSeed + 200L, 4) * 2 - 1) * wr;
+            // ── 1. Domain warping (rotated noise input for unique grain per island) ──
+            double ws   = 0.030;
+            double wr   = isl.rh * isl.warpF;
+            double cosA = Math.cos(isl.warpAngle), sinA = Math.sin(isl.warpAngle);
+            double wxi  = wx * cosA - wz * sinA;
+            double wzi  = wx * sinA + wz * cosA;
+            double swx  = wx + (fractalNoise2D(wxi * ws,       wzi * ws,       noiseSeed + 100L, 4) * 2 - 1) * wr;
+            double swz  = wz + (fractalNoise2D(wxi * ws + 500, wzi * ws + 500, noiseSeed + 200L, 4) * 2 - 1) * wr;
 
             // ── 2. Radial noise ──────────────────────────────────────────────
             double angle       = Math.atan2(wz - isl.cz, wx - isl.cx);
@@ -281,9 +285,9 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                     noiseSeed + 300L, 5);
             double effRadius = isl.rh * (isl.radBase + radialNoise * isl.radRange);
 
-            // ── 3. Normalised distance in warped space ───────────────────────
-            double wdx   = swx - isl.cx;
-            double wdz   = swz - isl.cz;
+            // ── 3. Normalised distance in warped + elliptical space ──────────
+            double wdx   = (swx - isl.cx) / isl.stretchX;
+            double wdz   = (swz - isl.cz) / isl.stretchZ;
             double dist  = Math.sqrt(wdx * wdx + wdz * wdz);
             double normR = dist / effRadius;
             if (normR > 1.22) continue;
@@ -292,10 +296,10 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
             if (shape < 0.012) continue;
 
             // ── 4. Vertical extent ───────────────────────────────────────────
-            double topNoise  = fractalNoise2D(wx * 0.09, wz * 0.09, noiseSeed + 400L, 3) * 0.32;
+            double topNoise  = fractalNoise2D(wx * 0.09, wz * 0.09, noiseSeed + 400L, 3) * isl.topAmp;
             double topYd     = isl.cy + isl.rv * shape * (1.0 + topNoise);
 
-            double botNoise  = fractalNoise2D(wx * 0.07 + 5000, wz * 0.07 + 5000, noiseSeed + 500L, 3) * 0.55;
+            double botNoise  = fractalNoise2D(wx * 0.07 + 5000, wz * 0.07 + 5000, noiseSeed + 500L, 3) * isl.botAmp;
             double bodyBotYd = isl.cy - isl.rv * isl.botF * Math.max(0.06, shape)
                              - isl.rv * botNoise * shape;
 
@@ -443,7 +447,8 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         double rh = MIN_RADIUS_H + rng.nextDouble() * (MAX_RADIUS_H - MIN_RADIUS_H);
 
         IslandData primary = new IslandData(wx, baseY, wz, rh, randomRv(rh, rng),
-                randomWarpF(rng), randomExp(rng), randomRadBase(rng), randomRadRange(rng), randomBotF(rng));
+                randomWarpF(rng), randomExp(rng), randomRadBase(rng), randomRadRange(rng), randomBotF(rng),
+                randomTopAmp(rng), randomBotAmp(rng), randomStretchX(rng), randomStretchZ(rng), randomWarpAngle(rng));
         out.add(primary);
 
         if (rng.nextFloat() < SATELLITE_CHANCE) {
@@ -462,16 +467,22 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         int satY = parent.cy + rng.nextInt(51) - 25;
         double satRH = parent.rh * (0.28 + rng.nextDouble() * 0.52);
         return new IslandData(satX, satY, satZ, satRH, randomRv(satRH, rng),
-                randomWarpF(rng), randomExp(rng), randomRadBase(rng), randomRadRange(rng), randomBotF(rng));
+                randomWarpF(rng), randomExp(rng), randomRadBase(rng), randomRadRange(rng), randomBotF(rng),
+                randomTopAmp(rng), randomBotAmp(rng), randomStretchX(rng), randomStretchZ(rng), randomWarpAngle(rng));
     }
 
     // ── Per-parameter random ranges ───────────────────────────────────────────
-    private static double randomRv      (double rh, RandomSource r) { return rh * (0.03 + r.nextDouble() * 0.75); }
-    private static double randomWarpF   (RandomSource r) { return 0.10 + r.nextDouble() * 0.75; }
-    private static double randomExp     (RandomSource r) { return 0.45 + r.nextDouble() * 6.55; }
-    private static double randomRadBase (RandomSource r) { return 0.42 + r.nextDouble() * 0.43; }
-    private static double randomRadRange(RandomSource r) { return 0.12 + r.nextDouble() * 1.28; }
-    private static double randomBotF    (RandomSource r) { return 0.04 + r.nextDouble() * 1.46; }
+    private static double randomRv       (double rh, RandomSource r) { return rh * (0.03 + r.nextDouble() * 0.75); }
+    private static double randomWarpF    (RandomSource r) { return 0.10 + r.nextDouble() * 0.75; }
+    private static double randomExp      (RandomSource r) { return 0.45 + r.nextDouble() * 6.55; }
+    private static double randomRadBase  (RandomSource r) { return 0.42 + r.nextDouble() * 0.43; }
+    private static double randomRadRange (RandomSource r) { return 0.12 + r.nextDouble() * 1.28; }
+    private static double randomBotF     (RandomSource r) { return 0.04 + r.nextDouble() * 1.46; }
+    private static double randomTopAmp   (RandomSource r) { return 0.05 + r.nextDouble() * 0.50; }
+    private static double randomBotAmp   (RandomSource r) { return 0.10 + r.nextDouble() * 0.80; }
+    private static double randomStretchX (RandomSource r) { return 0.55 + r.nextDouble() * 1.25; }
+    private static double randomStretchZ (RandomSource r) { return 0.55 + r.nextDouble() * 1.25; }
+    private static double randomWarpAngle(RandomSource r) { return r.nextDouble() * 2.0 * Math.PI; }
 
     // ═════════════════════════════════════════════════════════════════════════
     // STRUCTURE PLATFORMS — organic contour island around every structure
@@ -652,10 +663,13 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     // ═════════════════════════════════════════════════════════════════════════
 
     private int approximateTopY(int x, int z, IslandData isl, long noiseSeed) {
-        double ws  = 0.030;
-        double wr  = isl.rh * isl.warpF;
-        double swx = x + (fractalNoise2D(x * ws,       z * ws,       noiseSeed + 100L, 4) * 2 - 1) * wr;
-        double swz = z + (fractalNoise2D(x * ws + 500, z * ws + 500, noiseSeed + 200L, 4) * 2 - 1) * wr;
+        double ws   = 0.030;
+        double wr   = isl.rh * isl.warpF;
+        double cosA = Math.cos(isl.warpAngle), sinA = Math.sin(isl.warpAngle);
+        double wxi  = x * cosA - z * sinA;
+        double wzi  = x * sinA + z * cosA;
+        double swx  = x + (fractalNoise2D(wxi * ws,       wzi * ws,       noiseSeed + 100L, 4) * 2 - 1) * wr;
+        double swz  = z + (fractalNoise2D(wxi * ws + 500, wzi * ws + 500, noiseSeed + 200L, 4) * 2 - 1) * wr;
 
         double angle       = Math.atan2(z - isl.cz, x - isl.cx);
         double radialNoise = fractalNoise2D(
@@ -664,8 +678,8 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                 noiseSeed + 300L, 5);
         double effRadius = isl.rh * (isl.radBase + radialNoise * isl.radRange);
 
-        double wdx   = swx - isl.cx;
-        double wdz   = swz - isl.cz;
+        double wdx   = (swx - isl.cx) / isl.stretchX;
+        double wdz   = (swz - isl.cz) / isl.stretchZ;
         double dist  = Math.sqrt(wdx * wdx + wdz * wdz);
         double normR = dist / effRadius;
         if (normR > 1.22) return Integer.MIN_VALUE;
@@ -673,7 +687,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         double shape = Math.max(0.0, 1.0 - Math.pow(normR, isl.exp));
         if (shape < 0.012) return Integer.MIN_VALUE;
 
-        double topNoise = fractalNoise2D(x * 0.09, z * 0.09, noiseSeed + 400L, 3) * 0.32;
+        double topNoise = fractalNoise2D(x * 0.09, z * 0.09, noiseSeed + 400L, 3) * isl.topAmp;
         return (int) Math.round(isl.cy + isl.rv * shape * (1.0 + topNoise));
     }
 
@@ -715,11 +729,17 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     // ═════════════════════════════════════════════════════════════════════════
 
     // All shape parameters are drawn independently per island — fully procedural.
-    // warpF   : domain-warp strength (0.10–0.85)
-    // exp     : shape falloff exponent (0.45–7.0)  low=spike, high=flat disk
-    // radBase : base radial multiplier (0.42–0.85)
-    // radRange: radial-noise amplitude (0.12–1.40)
-    // botF    : bottom-extension factor (0.04–1.50)
+    // warpF    : domain-warp strength (0.10–0.85)
+    // exp      : shape falloff exponent (0.45–7.0)  low=spike, high=flat disk
+    // radBase  : base radial multiplier (0.42–0.85)
+    // radRange : radial-noise amplitude (0.12–1.40)
+    // botF     : bottom-extension factor (0.04–1.50)
+    // topAmp   : top-surface noise amplitude (0.05–0.55)
+    // botAmp   : bottom-surface noise amplitude (0.10–0.90)
+    // stretchX : elliptical X-axis scale (0.55–1.80)
+    // stretchZ : elliptical Z-axis scale (0.55–1.80)
+    // warpAngle: rotation angle of domain-warp noise input (0–2π)
     private record IslandData(int cx, int cy, int cz, double rh, double rv,
-                               double warpF, double exp, double radBase, double radRange, double botF) {}
+                               double warpF, double exp, double radBase, double radRange, double botF,
+                               double topAmp, double botAmp, double stretchX, double stretchZ, double warpAngle) {}
 }
