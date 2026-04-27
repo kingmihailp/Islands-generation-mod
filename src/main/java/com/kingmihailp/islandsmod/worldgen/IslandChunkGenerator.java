@@ -158,13 +158,21 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         }
 
         // Islands whose center biome is ocean get a central lake carved in them.
-        // Use biomeSource directly (no WorldGenRegion deadlock risk at distant coords).
+        // Ocean pool islands must stay circular (stretchX=stretchZ=1.0) so the
+        // lake radius makes sense relative to the island footprint.  Replace any
+        // stretched ocean island in augmentedIslands before Pass 1 runs.
         Climate.Sampler climateSampler = randomState.sampler();
         List<IslandData> oceanIslands = new ArrayList<>();
-        for (IslandData isl : islands) {
+        for (int i = 0; i < islands.size(); i++) {
+            IslandData isl = augmentedIslands.get(i);
             Holder<Biome> b = biomeSource.getNoiseBiome(isl.cx() >> 2, isl.cy() >> 2, isl.cz() >> 2, climateSampler);
-            if (b.is(BiomeTags.IS_OCEAN) || b.is(BiomeTags.IS_DEEP_OCEAN))
-                oceanIslands.add(isl);
+            if (b.is(BiomeTags.IS_OCEAN) || b.is(BiomeTags.IS_DEEP_OCEAN)) {
+                IslandData circular = new IslandData(isl.cx(), isl.cy(), isl.cz(), isl.rh(), isl.rv(),
+                        isl.warpF(), isl.exp(), isl.radBase(), isl.radRange(), isl.botF(),
+                        isl.topAmp(), isl.botAmp(), 1.0, 1.0, isl.warpAngle());
+                augmentedIslands.set(i, circular);
+                oceanIslands.add(circular);
+            }
         }
 
         int[] topYCache = new int[16 * 16];
