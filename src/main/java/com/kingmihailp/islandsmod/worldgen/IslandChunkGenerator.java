@@ -644,12 +644,29 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
 
             if (organicSdf < 0.0) {
                 // ── Interior (inside rounded+noisy boundary) ──────────────────
-                // Fill from the BB bottom to floorY so the structure floor is
-                // fully supported.  fillIslandColumn already ran; isAir() skips
-                // blocks that are already stone/deepslate.
                 int topYi = floorY;
                 if (topYi < minY + 1 || topYi >= maxY) continue;
-                int botYi = Math.max(bb.minY(), minY);
+
+                // Organic bottom — mirrors natural island botYd formula.
+                // shape: 0 at the rounded boundary, 1 toward the interior center.
+                double interiorDepth = -organicSdf;
+                double normDist      = Math.max(Math.min(halfBBW, halfBBD) * 0.5, 8.0);
+                double shape         = Math.min(interiorDepth / normDist, 1.0);
+
+                // base thickness = available vertical range, clamped to [6, 28]
+                double baseThick = Math.min(Math.max(topYi - Math.max(bb.minY(), minY), 6.0), 28.0);
+
+                // Two-frequency noise: large bumps + fine detail (same seed offsets as islands)
+                double lowNoise  = fractalNoise2D(wx * 0.04,       wz * 0.04,       noiseSeed + 12345L, 3);
+                double highNoise = fractalNoise2D(wx * 0.09 + 5000, wz * 0.09 + 5000, noiseSeed + 500L,  3);
+                double botNoise  = lowNoise * 0.60 + highNoise * 0.40;
+
+                // botYd: near boundary → almost flush with floorY (thin edge)
+                //        at centre    → baseThick * 0.75 below floorY + noise variation
+                double botYd = topYi - baseThick * 0.75 * Math.max(0.06, shape)
+                                     - baseThick * 0.40 * botNoise * shape;
+                int botYi = Math.max((int) Math.round(botYd), minY);
+
                 for (int y = botYi; y <= topYi; y++) {
                     BlockPos pos = new BlockPos(wx, y, wz);
                     if (chunk.getBlockState(pos).isAir()) {
