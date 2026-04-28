@@ -206,7 +206,14 @@ public class PocketDungeonStructure {
                 weightedLootList("minecraft:items/trial_chambers/key_ominous")));
 
         HolderLookup.Provider reg = level.registryAccess();
-        tbe.getTrialSpawner().load(tbe, root, reg);
+        try {
+            java.lang.reflect.Method m = tbe.getClass().getDeclaredMethod(
+                    "loadAdditional", CompoundTag.class, HolderLookup.Provider.class);
+            m.setAccessible(true);
+            m.invoke(tbe, root, reg);
+        } catch (ReflectiveOperationException ignored) {
+            tbe.loadWithComponents(root, reg);
+        }
         tbe.setChanged();
         level.sendBlockUpdated(pos, tbe.getBlockState(), tbe.getBlockState(), 3);
     }
