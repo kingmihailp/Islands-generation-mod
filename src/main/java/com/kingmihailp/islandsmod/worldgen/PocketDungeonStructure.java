@@ -206,11 +206,25 @@ public class PocketDungeonStructure {
                 weightedLootList("islandsmod:pocket_dungeon/spawner_key_ominous")));
 
         HolderLookup.Provider reg = level.registryAccess();
+        // Search for loadAdditional by name — avoids depending on exact parameter types
+        java.lang.reflect.Method loadAdditional = null;
+        for (Class<?> cls = tbe.getClass(); cls != null; cls = cls.getSuperclass()) {
+            for (java.lang.reflect.Method m : cls.getDeclaredMethods()) {
+                if ("loadAdditional".equals(m.getName()) && m.getParameterCount() == 2
+                        && m.getParameterTypes()[0].isAssignableFrom(CompoundTag.class)) {
+                    loadAdditional = m;
+                    break;
+                }
+            }
+            if (loadAdditional != null) break;
+        }
         try {
-            java.lang.reflect.Method m = tbe.getClass().getDeclaredMethod(
-                    "loadAdditional", CompoundTag.class, HolderLookup.Provider.class);
-            m.setAccessible(true);
-            m.invoke(tbe, root, reg);
+            if (loadAdditional != null) {
+                loadAdditional.setAccessible(true);
+                loadAdditional.invoke(tbe, root, reg);
+            } else {
+                tbe.loadWithComponents(root, reg);
+            }
         } catch (ReflectiveOperationException ignored) {
             tbe.loadWithComponents(root, reg);
         }
