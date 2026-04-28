@@ -3,6 +3,8 @@ package com.kingmihailp.islandsmod.worldgen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
@@ -10,6 +12,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.SculkShriekerBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity;
+import net.minecraft.world.level.storage.loot.LootTable;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.Random;
@@ -111,7 +114,8 @@ public class PocketAncientCityStructure {
 
     private static void placeChests(ServerLevel level, int cx, int cy, int cz,
                                      int radius, Random rng) {
-        ResourceLocation loot = ResourceLocation.fromNamespaceAndPath("minecraft", "chests/ancient_city");
+        ResourceKey<LootTable> loot = ResourceKey.create(Registries.LOOT_TABLE,
+                ResourceLocation.fromNamespaceAndPath("minecraft", "chests/ancient_city"));
         int inner = radius - 2;
         for (int i = 0; i < 2; i++) {
             for (int attempt = 0; attempt < 16; attempt++) {
