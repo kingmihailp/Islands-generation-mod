@@ -204,7 +204,7 @@ public class PocketDungeonStructure {
                 potentials.copy(),
                 weightedLootList("minecraft:items/trial_chambers/key_ominous")));
 
-        be.load(root);
+        be.loadWithComponents(root, level.registryAccess());
         be.setChanged();
         level.sendBlockUpdated(pos, be.getBlockState(), be.getBlockState(), 3);
     }
@@ -298,7 +298,7 @@ public class PocketDungeonStructure {
         CompoundTag root = new CompoundTag();
         root.put("config", config);
 
-        be.load(root);
+        be.loadWithComponents(root, level.registryAccess());
         be.setChanged();
         level.sendBlockUpdated(pos, be.getBlockState(), be.getBlockState(), 3);
     }
