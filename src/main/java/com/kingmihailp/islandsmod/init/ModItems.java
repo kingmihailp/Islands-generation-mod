@@ -1,6 +1,7 @@
 package com.kingmihailp.islandsmod.init;
 
 import com.kingmihailp.islandsmod.IslandsMod;
+import com.kingmihailp.islandsmod.item.JackhammerItem;
 import com.kingmihailp.islandsmod.item.PocketAncientCityItem;
 import com.kingmihailp.islandsmod.item.PocketDungeonItem;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -22,6 +23,10 @@ public class ModItems {
     public static final DeferredHolder<Item, PocketAncientCityItem> POCKET_ANCIENT_CITY =
             ITEMS.register("pocket_ancient_city",
                     () -> new PocketAncientCityItem(new Item.Properties().stacksTo(1).rarity(Rarity.EPIC)));
+
+    public static final DeferredHolder<Item, JackhammerItem> JACKHAMMER =
+            ITEMS.register("jackhammer",
+                    () -> new JackhammerItem(new Item.Properties().stacksTo(1).durability(512)));
 
     public static void register(IEventBus bus) {
         ITEMS.register(bus);
