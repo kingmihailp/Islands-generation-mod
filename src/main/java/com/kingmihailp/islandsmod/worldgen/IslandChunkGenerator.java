@@ -354,7 +354,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                     h ^= h >>> 33;
                     h *= 0xff51afd7ed558ccdL;
                     h ^= h >>> 33;
-                    block = ((h & 0xFFFFL) == 0)
+                    block = ((h & 0x3FFFL) == 0)
                             ? Blocks.BEDROCK.defaultBlockState()
                             : Blocks.DEEPSLATE.defaultBlockState();
                 } else if (y < DEEPSLATE_TOP) {
