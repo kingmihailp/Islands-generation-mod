@@ -1,4 +1,5 @@
 {
   "item.islandsmod.pocket_dungeon": "Карманный дворец испытаний",
-  "item.islandsmod.pocket_ancient_city": "Карманный древний город"
+  "item.islandsmod.pocket_ancient_city": "Карманный древний город",
+  "item.islandsmod.pocket_ancient_city.wrong_biome": "Можно использовать только в биоме Глубокая тьма!"
 }
