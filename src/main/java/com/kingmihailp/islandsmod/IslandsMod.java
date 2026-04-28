@@ -24,6 +24,7 @@ public class IslandsMod {
     private void addCreativeItems(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.TOOLS_AND_UTILITIES) {
             event.accept(ModItems.POCKET_DUNGEON.get());
+            event.accept(ModItems.POCKET_ANCIENT_CITY.get());
         }
     }
 }
