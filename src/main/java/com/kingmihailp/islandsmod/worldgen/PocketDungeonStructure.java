@@ -9,7 +9,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.TrialSpawnerBlock;
 import net.minecraft.world.level.block.VaultBlock;
-import net.minecraft.core.HolderLookup;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.TrialSpawnerBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -205,8 +204,7 @@ public class PocketDungeonStructure {
                 potentials.copy(),
                 weightedLootList("minecraft:items/trial_chambers/key_ominous")));
 
-        HolderLookup.Provider reg = level.registryAccess();
-        be.load(root, reg);
+        be.load(root);
         be.setChanged();
         level.sendBlockUpdated(pos, be.getBlockState(), be.getBlockState(), 3);
     }
@@ -300,8 +298,7 @@ public class PocketDungeonStructure {
         CompoundTag root = new CompoundTag();
         root.put("config", config);
 
-        HolderLookup.Provider reg = level.registryAccess();
-        be.load(root, reg);
+        be.load(root);
         be.setChanged();
         level.sendBlockUpdated(pos, be.getBlockState(), be.getBlockState(), 3);
     }
