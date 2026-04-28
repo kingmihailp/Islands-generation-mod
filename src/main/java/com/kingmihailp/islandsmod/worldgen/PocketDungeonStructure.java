@@ -2,6 +2,7 @@ package com.kingmihailp.islandsmod.worldgen;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.server.level.ServerLevel;
@@ -191,7 +192,7 @@ public class PocketDungeonStructure {
                 .setValue(TrialSpawnerBlock.OMINOUS, false), 3);
 
         BlockEntity be = level.getBlockEntity(pos);
-        if (!(be instanceof TrialSpawnerBlockEntity)) return;
+        if (!(be instanceof TrialSpawnerBlockEntity tbe)) return;
 
         ListTag potentials = buildSpawnPotentials(mobId);
         CompoundTag root = new CompoundTag();
@@ -204,9 +205,10 @@ public class PocketDungeonStructure {
                 potentials.copy(),
                 weightedLootList("minecraft:items/trial_chambers/key_ominous")));
 
-        be.loadWithComponents(root, level.registryAccess());
-        be.setChanged();
-        level.sendBlockUpdated(pos, be.getBlockState(), be.getBlockState(), 3);
+        HolderLookup.Provider reg = level.registryAccess();
+        tbe.getTrialSpawner().load(tbe, root, reg);
+        tbe.setChanged();
+        level.sendBlockUpdated(pos, tbe.getBlockState(), tbe.getBlockState(), 3);
     }
 
     private static ListTag buildSpawnPotentials(String mobId) {
