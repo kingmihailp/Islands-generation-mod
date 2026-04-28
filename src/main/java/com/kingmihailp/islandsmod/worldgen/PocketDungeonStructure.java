@@ -199,11 +199,11 @@ public class PocketDungeonStructure {
         root.put("normal_config", spawnerConfig(
                 6, 2.0f, 2, 1, 40,
                 potentials.copy(),
-                weightedLootList("minecraft:items/trial_chambers/key")));
+                weightedLootList("islandsmod:pocket_dungeon/spawner_key")));
         root.put("ominous_config", spawnerConfig(
                 9, 3.0f, 3, 2, 20,
                 potentials.copy(),
-                weightedLootList("minecraft:items/trial_chambers/key_ominous")));
+                weightedLootList("islandsmod:pocket_dungeon/spawner_key_ominous")));
 
         HolderLookup.Provider reg = level.registryAccess();
         try {
@@ -238,10 +238,10 @@ public class PocketDungeonStructure {
         CompoundTag cfg = new CompoundTag();
         cfg.putInt("required_player_range", 14);
         cfg.putInt("spawn_range", 4);
-        cfg.putInt("total_mobs", totalMobs);
+        cfg.putFloat("total_mobs", (float) totalMobs);
         cfg.putFloat("total_mobs_added_per_player", perPlayer);
-        cfg.putInt("simultaneous_mobs", simMobs);
-        cfg.putInt("simultaneous_mobs_added_per_player", simPerPlayer);
+        cfg.putFloat("simultaneous_mobs", (float) simMobs);
+        cfg.putFloat("simultaneous_mobs_added_per_player", (float) simPerPlayer);
         cfg.putInt("ticks_between_spawn", ticksBetween);
         cfg.put("spawn_potentials", potentials);
         cfg.put("loot_tables_to_eject", loot);
