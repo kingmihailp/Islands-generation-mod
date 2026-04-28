@@ -10,6 +10,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -53,7 +54,7 @@ public class JackhammerItem extends Item {
 
             ItemStack stack = context.getItemInHand();
             if (player != null && !player.getAbilities().instabuild) {
-                stack.hurtAndBreak(1, player, p -> {});
+                stack.hurtAndBreak(1, player, EquipmentSlot.MAINHAND);
             }
 
             JackhammerData data = JackhammerData.get(serverLevel);
