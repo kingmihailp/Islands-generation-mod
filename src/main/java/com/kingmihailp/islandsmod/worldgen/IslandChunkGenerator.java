@@ -347,7 +347,17 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                 if (inBB) continue;
 
                 BlockState block;
-                if (y < DEEPSLATE_TOP) {
+                if (y >= -42 && y <= -40) {
+                    // Very rare isolated bedrock deep inside islands
+                    long h = (long) wx * 374761393L ^ (long) y * 1234567891L
+                           ^ (long) wz * 987654321L ^ noiseSeed;
+                    h ^= h >>> 33;
+                    h *= 0xff51afd7ed558ccdL;
+                    h ^= h >>> 33;
+                    block = ((h & 0xFFFFL) == 0)
+                            ? Blocks.BEDROCK.defaultBlockState()
+                            : Blocks.DEEPSLATE.defaultBlockState();
+                } else if (y < DEEPSLATE_TOP) {
                     block = Blocks.DEEPSLATE.defaultBlockState();
                 } else if (y < 8) {
                     double mix = smoothNoise2D(wx * 0.25 + y * 0.12, wz * 0.25, noiseSeed + 600L);
