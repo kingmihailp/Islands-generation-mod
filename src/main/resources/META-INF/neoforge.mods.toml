@@ -21,3 +21,10 @@ description='''Replaces overworld generation with flying islands of various size
     versionRange="[1.21,)"
     ordering="NONE"
     side="BOTH"
+
+[[dependencies.islandsmod]]
+    modId="jei"
+    type="optional"
+    versionRange="[19.21.1,)"
+    ordering="NONE"
+    side="CLIENT"

@@ -42,8 +42,16 @@ sourceSets.main.resources {
     srcDir 'src/generated/resources'
 }
 
+repositories {
+    maven {
+        name = "BlameJared Maven (JEI)"
+        url = "https://maven.blamejared.com"
+    }
+}
+
 dependencies {
     implementation "net.neoforged:neoforge:${neo_version}"
+    compileOnly "mezz.jei:jei-1.21.1-neoforge-api:${jei_version}"
 }
 
 tasks.withType(ProcessResources).configureEach {

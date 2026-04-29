@@ -2,5 +2,6 @@
   "item.islandsmod.pocket_dungeon": "Pocket Trial Palace",
   "item.islandsmod.pocket_ancient_city": "Pocket Ancient City",
   "item.islandsmod.pocket_ancient_city.wrong_biome": "Can only be used in the Deep Dark biome!",
-  "item.islandsmod.jackhammer": "Homemade Jackhammer"
+  "item.islandsmod.jackhammer": "Homemade Jackhammer",
+  "jei.islandsmod.jackhammer_conversion": "Bedrock Drilling"
 }
