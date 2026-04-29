@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "GAG",
+    "GEG",
+    "BSB"
+  ],
+  "key": {
+    "G": { "item": "minecraft:copper_grate" },
+    "A": { "item": "minecraft:golden_apple" },
+    "E": { "item": "create:experience_nugget" },
+    "B": { "item": "minecraft:copper_block" },
+    "S": { "item": "dungeonsdelight:stained_scrap" }
+  },
+  "result": {
+    "id": "islandsmod:pocket_dungeon",
+    "count": 1
+  }
+}
