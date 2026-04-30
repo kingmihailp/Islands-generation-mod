@@ -5,5 +5,7 @@
   "item.islandsmod.jackhammer": "Homemade Jackhammer",
   "jei.islandsmod.jackhammer_conversion": "Bedrock Drilling",
   "item.islandsmod.warped_lure": "Suspicious Warped Lure",
-  "item.islandsmod.warped_lure.mod_missing": "Alex's Mobs mod is not installed!"
+  "item.islandsmod.warped_lure.mod_missing": "Alex's Mobs mod is not installed!",
+  "block.islandsmod.portal_catalyst": "Portal Catalyst",
+  "item.islandsmod.pocket_end_fortress": "Pocket End Fortress"
 }

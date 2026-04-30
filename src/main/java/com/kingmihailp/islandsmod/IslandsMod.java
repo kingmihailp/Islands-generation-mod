@@ -1,6 +1,7 @@
 package com.kingmihailp.islandsmod;
 
 import com.kingmihailp.islandsmod.event.PlayerSpawnHandler;
+import com.kingmihailp.islandsmod.init.ModBlocks;
 import com.kingmihailp.islandsmod.init.ModItems;
 import com.kingmihailp.islandsmod.init.ModWorldgen;
 import net.minecraft.world.item.CreativeModeTabs;
@@ -16,6 +17,7 @@ public class IslandsMod {
 
     public IslandsMod(IEventBus modEventBus) {
         ModWorldgen.register(modEventBus);
+        ModBlocks.register(modEventBus);
         ModItems.register(modEventBus);
         modEventBus.addListener(this::addCreativeItems);
         NeoForge.EVENT_BUS.register(PlayerSpawnHandler.class);
@@ -27,6 +29,8 @@ public class IslandsMod {
             event.accept(ModItems.POCKET_ANCIENT_CITY.get());
             event.accept(ModItems.JACKHAMMER.get());
             event.accept(ModItems.WARPED_LURE.get());
+            event.accept(ModItems.PORTAL_CATALYST.get());
+            event.accept(ModItems.POCKET_END_FORTRESS.get());
         }
     }
 }

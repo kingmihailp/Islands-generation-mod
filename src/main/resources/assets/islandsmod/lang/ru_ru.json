@@ -5,5 +5,7 @@
   "item.islandsmod.jackhammer": "Самодельный отбойный молоток",
   "jei.islandsmod.jackhammer_conversion": "Бурение бедрока",
   "item.islandsmod.warped_lure": "Подозрительная искажённая приманка",
-  "item.islandsmod.warped_lure.mod_missing": "Мод Alex's Mobs не установлен!"
+  "item.islandsmod.warped_lure.mod_missing": "Мод Alex's Mobs не установлен!",
+  "block.islandsmod.portal_catalyst": "Портальный катализатор",
+  "item.islandsmod.pocket_end_fortress": "Карманная крепость Энда"
 }

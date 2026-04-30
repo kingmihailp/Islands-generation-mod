@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "islandsmod:item/pocket_end_fortress"
+  }
+}

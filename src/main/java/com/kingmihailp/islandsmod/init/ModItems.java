@@ -4,8 +4,10 @@ import com.kingmihailp.islandsmod.IslandsMod;
 import com.kingmihailp.islandsmod.item.JackhammerItem;
 import com.kingmihailp.islandsmod.item.PocketAncientCityItem;
 import com.kingmihailp.islandsmod.item.PocketDungeonItem;
+import com.kingmihailp.islandsmod.item.PocketEndFortressItem;
 import com.kingmihailp.islandsmod.item.WarpedLureItem;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Rarity;
 import net.neoforged.bus.api.IEventBus;
@@ -32,6 +34,15 @@ public class ModItems {
     public static final DeferredHolder<Item, WarpedLureItem> WARPED_LURE =
             ITEMS.register("warped_lure",
                     () -> new WarpedLureItem(new Item.Properties().stacksTo(1).rarity(Rarity.RARE)));
+
+    public static final DeferredHolder<Item, BlockItem> PORTAL_CATALYST =
+            ITEMS.register("portal_catalyst",
+                    () -> new BlockItem(ModBlocks.PORTAL_CATALYST.get(),
+                            new Item.Properties().rarity(Rarity.RARE)));
+
+    public static final DeferredHolder<Item, PocketEndFortressItem> POCKET_END_FORTRESS =
+            ITEMS.register("pocket_end_fortress",
+                    () -> new PocketEndFortressItem(new Item.Properties().stacksTo(1).rarity(Rarity.EPIC)));
 
     public static void register(IEventBus bus) {
         ITEMS.register(bus);

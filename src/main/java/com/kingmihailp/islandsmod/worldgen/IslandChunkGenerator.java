@@ -1,5 +1,6 @@
 package com.kingmihailp.islandsmod.worldgen;
 
+import com.kingmihailp.islandsmod.init.ModBlocks;
 import com.kingmihailp.islandsmod.init.ModWorldgen;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -281,6 +282,22 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                     }
                 }
             }
+        }
+
+        // ── Portal catalyst: ~1/8 islands get one at their horizontal centre ──
+        for (IslandData isl : islands) {
+            int localX = isl.cx() - startX;
+            int localZ = isl.cz() - startZ;
+            if (localX < 0 || localX >= 16 || localZ < 0 || localZ >= 16) continue;
+            int topY = topYCache[localX * 16 + localZ];
+            if (topY == Integer.MIN_VALUE) continue;
+            long hc = (long) isl.cx() * 374761393L ^ (long) isl.cz() * 987654321L ^ noiseSeed;
+            hc ^= hc >>> 33;
+            hc *= 0xff51afd7ed558ccdL;
+            hc ^= hc >>> 33;
+            if ((hc & 0x7L) != 0) continue;
+            chunk.setBlockState(new BlockPos(isl.cx(), topY, isl.cz()),
+                    ModBlocks.PORTAL_CATALYST.get().defaultBlockState(), false);
         }
     }
 
