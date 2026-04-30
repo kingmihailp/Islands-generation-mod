@@ -15,6 +15,7 @@ import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
@@ -68,6 +69,17 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
 
     // ── Cardinal directions ───────────────────────────────────────────────────
     private static final int[][] DIRS4 = {{1,0},{-1,0},{0,1},{0,-1}};
+
+    // ── Molten-vent dormant blocks (Y -30 to 10) ──────────────────────────────
+    private static final ResourceLocation[] MOLTEN_VENT_RLS = {
+        ResourceLocation.fromNamespaceAndPath("molten_vents", "dormant_molten_asurine"),
+        ResourceLocation.fromNamespaceAndPath("molten_vents", "dormant_molten_crimsite"),
+        ResourceLocation.fromNamespaceAndPath("molten_vents", "dormant_molten_ochrum"),
+        ResourceLocation.fromNamespaceAndPath("molten_vents", "dormant_molten_veridium"),
+        ResourceLocation.fromNamespaceAndPath("molten_vents", "dormant_molten_scorchia"),
+        ResourceLocation.fromNamespaceAndPath("molten_vents", "dormant_molten_scoria"),
+    };
+    private static volatile BlockState[] moltenVentStates = null;
 
     // ── Structure platform descriptor ─────────────────────────────────────────
     // floorY = island surface at the structure's spawn point (reference chunk
@@ -366,6 +378,19 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                                       : Blocks.DEEPSLATE.defaultBlockState();
                 } else {
                     block = Blocks.STONE.defaultBlockState();
+                }
+                // Molten-vent dormant blocks scattered through Y -30..10 (same rarity as bedrock)
+                if (y >= -30 && y <= 10) {
+                    long hm = (long) wx * 597399163L ^ (long) y * 2862933555L
+                            ^ (long) wz * 1442695041L ^ noiseSeed;
+                    hm ^= hm >>> 33;
+                    hm *= 0xff51afd7ed558ccdL;
+                    hm ^= hm >>> 33;
+                    if ((hm & 0x3FFFL) == 0) {
+                        BlockState[] mv = getMoltenVentStates();
+                        BlockState candidate = mv[(int)((hm >>> 16) % 6)];
+                        if (candidate != null) block = candidate;
+                    }
                 }
                 chunk.setBlockState(new BlockPos(wx, y, wz), block, false);
                 if (y > columnTopY) columnTopY = y;
@@ -719,6 +744,18 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     // ═════════════════════════════════════════════════════════════════════════
     // HELPERS
     // ═════════════════════════════════════════════════════════════════════════
+
+    private static BlockState[] getMoltenVentStates() {
+        if (moltenVentStates == null) {
+            BlockState[] s = new BlockState[MOLTEN_VENT_RLS.length];
+            for (int i = 0; i < s.length; i++)
+                s[i] = BuiltInRegistries.BLOCK.getOptional(MOLTEN_VENT_RLS[i])
+                        .map(b -> b.defaultBlockState())
+                        .orElse(null);
+            moltenVentStates = s;
+        }
+        return moltenVentStates;
+    }
 
     private int approximateTopY(int x, int z, IslandData isl, long noiseSeed) {
         double ws   = 0.030;
