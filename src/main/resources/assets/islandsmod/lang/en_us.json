@@ -3,5 +3,7 @@
   "item.islandsmod.pocket_ancient_city": "Pocket Ancient City",
   "item.islandsmod.pocket_ancient_city.wrong_biome": "Can only be used in the Deep Dark biome!",
   "item.islandsmod.jackhammer": "Homemade Jackhammer",
-  "jei.islandsmod.jackhammer_conversion": "Bedrock Drilling"
+  "jei.islandsmod.jackhammer_conversion": "Bedrock Drilling",
+  "item.islandsmod.warped_lure": "Suspicious Warped Lure",
+  "item.islandsmod.warped_lure.mod_missing": "Alex's Mobs mod is not installed!"
 }

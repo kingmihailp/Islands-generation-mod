@@ -3,5 +3,7 @@
   "item.islandsmod.pocket_ancient_city": "Карманный древний город",
   "item.islandsmod.pocket_ancient_city.wrong_biome": "Можно использовать только в биоме Глубокая тьма!",
   "item.islandsmod.jackhammer": "Самодельный отбойный молоток",
-  "jei.islandsmod.jackhammer_conversion": "Бурение бедрока"
+  "jei.islandsmod.jackhammer_conversion": "Бурение бедрока",
+  "item.islandsmod.warped_lure": "Подозрительная искажённая приманка",
+  "item.islandsmod.warped_lure.mod_missing": "Мод Alex's Mobs не установлен!"
 }

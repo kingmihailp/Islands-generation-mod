@@ -4,6 +4,7 @@ import com.kingmihailp.islandsmod.IslandsMod;
 import com.kingmihailp.islandsmod.item.JackhammerItem;
 import com.kingmihailp.islandsmod.item.PocketAncientCityItem;
 import com.kingmihailp.islandsmod.item.PocketDungeonItem;
+import com.kingmihailp.islandsmod.item.WarpedLureItem;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Rarity;
@@ -27,6 +28,10 @@ public class ModItems {
     public static final DeferredHolder<Item, JackhammerItem> JACKHAMMER =
             ITEMS.register("jackhammer",
                     () -> new JackhammerItem(new Item.Properties().stacksTo(1).durability(512)));
+
+    public static final DeferredHolder<Item, WarpedLureItem> WARPED_LURE =
+            ITEMS.register("warped_lure",
+                    () -> new WarpedLureItem(new Item.Properties().stacksTo(1).rarity(Rarity.RARE)));
 
     public static void register(IEventBus bus) {
         ITEMS.register(bus);

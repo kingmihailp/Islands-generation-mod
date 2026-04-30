@@ -26,6 +26,7 @@ public class IslandsMod {
             event.accept(ModItems.POCKET_DUNGEON.get());
             event.accept(ModItems.POCKET_ANCIENT_CITY.get());
             event.accept(ModItems.JACKHAMMER.get());
+            event.accept(ModItems.WARPED_LURE.get());
         }
     }
 }
