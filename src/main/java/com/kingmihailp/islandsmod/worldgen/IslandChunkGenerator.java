@@ -83,6 +83,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         ResourceLocation.fromNamespaceAndPath("molten_vents", "dormant_molten_scoria"),
     };
     private static volatile BlockState[] moltenVentStates = null;
+    private static volatile RandomState cachedRandomState = null;
 
     // ── Structure platform descriptor ─────────────────────────────────────────
     // floorY = island surface at the structure's spawn point (reference chunk
@@ -115,6 +116,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     @Override
     public void buildSurface(WorldGenRegion region, StructureManager structureManager,
                               RandomState randomState, ChunkAccess chunk) {
+        cachedRandomState = randomState;
         int startX = chunk.getPos().getMinBlockX();
         int startZ = chunk.getPos().getMinBlockZ();
         int minY   = chunk.getMinBuildHeight();
@@ -515,10 +517,10 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
      * @return predicted BlockPos of the nearest catalyst, or null if none found
      */
     public static BlockPos findNearestCatalyst(ServerLevel level, BlockPos origin, int searchCellRadius) {
-        PositionalRandomFactory islandRand = level.getChunkSource().randomState
-                .getOrCreateRandomFactory(RL_ISLANDS);
-        long noiseSeed = level.getChunkSource().randomState
-                .getOrCreateRandomFactory(RL_TERRAIN).at(0, 0, 0).nextLong();
+        RandomState rs = cachedRandomState;
+        if (rs == null) return null;
+        PositionalRandomFactory islandRand = rs.getOrCreateRandomFactory(RL_ISLANDS);
+        long noiseSeed = rs.getOrCreateRandomFactory(RL_TERRAIN).at(0, 0, 0).nextLong();
         int originGX = Math.floorDiv(origin.getX(), GRID_SIZE);
         int originGZ = Math.floorDiv(origin.getZ(), GRID_SIZE);
         BlockPos nearest = null;
@@ -570,7 +572,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         }
     }
 
-    private IslandData spawnSatellite(IslandData parent, RandomSource rng) {
+    private static IslandData spawnSatellite(IslandData parent, RandomSource rng) {
         double angle = rng.nextDouble() * 2.0 * Math.PI;
         double dist  = parent.rh * (1.1 + rng.nextDouble() * 1.3);
         int satX = (int)(parent.cx + Math.cos(angle) * dist);
