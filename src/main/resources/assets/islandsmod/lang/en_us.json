@@ -7,5 +7,8 @@
   "item.islandsmod.warped_lure": "Suspicious Warped Lure",
   "item.islandsmod.warped_lure.mod_missing": "Alex's Mobs mod is not installed!",
   "block.islandsmod.portal_catalyst": "Portal Catalyst",
-  "item.islandsmod.pocket_end_fortress": "Pocket End Fortress"
+  "item.islandsmod.pocket_end_fortress": "Pocket End Fortress",
+  "item.islandsmod.catalyst_locator": "End Catalyst Locator",
+  "item.islandsmod.catalyst_locator.found": "Nearest portal catalyst: %s, %s, %s (%s blocks, %s)",
+  "item.islandsmod.catalyst_locator.not_found": "No portal catalyst found nearby."
 }

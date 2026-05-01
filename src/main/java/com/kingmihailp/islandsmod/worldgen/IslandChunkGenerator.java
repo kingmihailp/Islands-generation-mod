@@ -28,6 +28,8 @@ import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.tags.BiomeTags;
 import net.minecraft.world.level.biome.Climate;
 
+import net.minecraft.server.level.ServerLevel;
+
 import it.unimi.dsi.fastutil.longs.LongSet;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -504,8 +506,49 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         return result;
     }
 
-    private void buildCellIslands(int cellX, int cellZ,
-                                   PositionalRandomFactory randFac, List<IslandData> out) {
+    /**
+     * Predicts the nearest portal catalyst position without loading chunks.
+     * Uses the same deterministic hash as buildSurface to identify which island
+     * centres have a catalyst placed on them.
+     *
+     * @param searchCellRadius grid-cell radius to scan (each cell is GRID_SIZE blocks)
+     * @return predicted BlockPos of the nearest catalyst, or null if none found
+     */
+    public static BlockPos findNearestCatalyst(ServerLevel level, BlockPos origin, int searchCellRadius) {
+        PositionalRandomFactory islandRand = level.getChunkSource().randomState
+                .getOrCreateRandomFactory(RL_ISLANDS);
+        long noiseSeed = level.getChunkSource().randomState
+                .getOrCreateRandomFactory(RL_TERRAIN).at(0, 0, 0).nextLong();
+        int originGX = Math.floorDiv(origin.getX(), GRID_SIZE);
+        int originGZ = Math.floorDiv(origin.getZ(), GRID_SIZE);
+        BlockPos nearest = null;
+        double nearestDist = Double.MAX_VALUE;
+        for (int dx = -searchCellRadius; dx <= searchCellRadius; dx++) {
+            for (int dz = -searchCellRadius; dz <= searchCellRadius; dz++) {
+                List<IslandData> islands = new ArrayList<>();
+                buildCellIslands(originGX + dx, originGZ + dz, islandRand, islands);
+                for (IslandData isl : islands) {
+                    long hc = (long) isl.cx() * 374761393L ^ (long) isl.cz() * 987654321L ^ noiseSeed;
+                    hc ^= hc >>> 33;
+                    hc *= 0xff51afd7ed558ccdL;
+                    hc ^= hc >>> 33;
+                    if ((hc & 0x7L) != 0) continue;
+                    int topY = approximateTopY(isl.cx(), isl.cz(), isl, noiseSeed);
+                    if (topY == Integer.MIN_VALUE) topY = isl.cy();
+                    BlockPos candidate = new BlockPos(isl.cx(), topY, isl.cz());
+                    double d = candidate.distSqr(origin);
+                    if (d < nearestDist) {
+                        nearestDist = d;
+                        nearest = candidate;
+                    }
+                }
+            }
+        }
+        return nearest;
+    }
+
+    private static void buildCellIslands(int cellX, int cellZ,
+                                          PositionalRandomFactory randFac, List<IslandData> out) {
         RandomSource rng = randFac.at(cellX, 0, cellZ);
         if (rng.nextFloat() > ISLAND_CHANCE) return;
 
@@ -774,7 +817,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
         return moltenVentStates;
     }
 
-    private int approximateTopY(int x, int z, IslandData isl, long noiseSeed) {
+    private static int approximateTopY(int x, int z, IslandData isl, long noiseSeed) {
         double ws   = 0.030;
         double wr   = isl.rh * isl.warpF;
         double cosA = Math.cos(isl.warpAngle), sinA = Math.sin(isl.warpAngle);

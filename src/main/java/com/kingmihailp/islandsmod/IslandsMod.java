@@ -31,6 +31,7 @@ public class IslandsMod {
             event.accept(ModItems.WARPED_LURE.get());
             event.accept(ModItems.PORTAL_CATALYST.get());
             event.accept(ModItems.POCKET_END_FORTRESS.get());
+            event.accept(ModItems.CATALYST_LOCATOR.get());
         }
     }
 }

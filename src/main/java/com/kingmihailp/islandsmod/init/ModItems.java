@@ -4,6 +4,7 @@ import com.kingmihailp.islandsmod.IslandsMod;
 import com.kingmihailp.islandsmod.item.JackhammerItem;
 import com.kingmihailp.islandsmod.item.PocketAncientCityItem;
 import com.kingmihailp.islandsmod.item.PocketDungeonItem;
+import com.kingmihailp.islandsmod.item.CatalystLocatorItem;
 import com.kingmihailp.islandsmod.item.PocketEndFortressItem;
 import com.kingmihailp.islandsmod.item.WarpedLureItem;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -43,6 +44,10 @@ public class ModItems {
     public static final DeferredHolder<Item, PocketEndFortressItem> POCKET_END_FORTRESS =
             ITEMS.register("pocket_end_fortress",
                     () -> new PocketEndFortressItem(new Item.Properties().stacksTo(1).rarity(Rarity.EPIC)));
+
+    public static final DeferredHolder<Item, CatalystLocatorItem> CATALYST_LOCATOR =
+            ITEMS.register("catalyst_locator",
+                    () -> new CatalystLocatorItem(new Item.Properties().stacksTo(1).rarity(Rarity.RARE)));
 
     public static void register(IEventBus bus) {
         ITEMS.register(bus);

@@ -7,5 +7,8 @@
   "item.islandsmod.warped_lure": "Подозрительная искажённая приманка",
   "item.islandsmod.warped_lure.mod_missing": "Мод Alex's Mobs не установлен!",
   "block.islandsmod.portal_catalyst": "Портальный катализатор",
-  "item.islandsmod.pocket_end_fortress": "Карманная крепость Энда"
+  "item.islandsmod.pocket_end_fortress": "Карманная крепость Энда",
+  "item.islandsmod.catalyst_locator": "Локатор катализатора Энда",
+  "item.islandsmod.catalyst_locator.found": "Ближайший катализатор: %s, %s, %s (%s блоков, %s)",
+  "item.islandsmod.catalyst_locator.not_found": "Катализаторы рядом не найдены."
 }
