@@ -53,7 +53,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
 
     // ── Island dimensions ─────────────────────────────────────────────────────
     private static final double MIN_RADIUS_H = 24.0;
-    private static final double MAX_RADIUS_H = 120.0;
+    private static final double MAX_RADIUS_H = 72.0;
 
     // ── Vertical placement: center Y freely from -40 to 85 ───────────────────
     private static final int MIN_ISLAND_Y = -40;
