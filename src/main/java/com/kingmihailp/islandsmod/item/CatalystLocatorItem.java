@@ -1,5 +1,6 @@
 package com.kingmihailp.islandsmod.item;
 
+import com.kingmihailp.islandsmod.init.ModBlocks;
 import com.kingmihailp.islandsmod.worldgen.IslandChunkGenerator;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -26,7 +27,18 @@ public class CatalystLocatorItem extends Item {
         if (level.isClientSide) return InteractionResultHolder.success(stack);
 
         BlockPos origin = player.blockPosition();
-        BlockPos target = IslandChunkGenerator.findNearestCatalyst((ServerLevel) level, origin, SEARCH_RADIUS);
+        ServerLevel serverLevel = (ServerLevel) level;
+        BlockPos target = null;
+        for (BlockPos candidate : IslandChunkGenerator.findCatalystCandidates(origin, SEARCH_RADIUS)) {
+            // If the chunk is loaded we can verify the block is actually still there.
+            // Unloaded chunks are trusted as-is (can't read blocks without generating them).
+            if (serverLevel.isLoaded(candidate)
+                    && !serverLevel.getBlockState(candidate).is(ModBlocks.PORTAL_CATALYST.get())) {
+                continue;
+            }
+            target = candidate;
+            break;
+        }
 
         if (target == null) {
             player.displayClientMessage(Component.translatable("item.islandsmod.catalyst_locator.not_found"), true);

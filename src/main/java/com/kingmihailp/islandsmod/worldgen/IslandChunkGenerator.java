@@ -514,17 +514,17 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
      * centres have a catalyst placed on them.
      *
      * @param searchCellRadius grid-cell radius to scan (each cell is GRID_SIZE blocks)
-     * @return predicted BlockPos of the nearest catalyst, or null if none found
+     * @return predicted catalyst positions sorted nearest-first; loaded chunks with no
+     *         catalyst block present are excluded by the caller
      */
-    public static BlockPos findNearestCatalyst(ServerLevel level, BlockPos origin, int searchCellRadius) {
+    public static List<BlockPos> findCatalystCandidates(BlockPos origin, int searchCellRadius) {
         RandomState rs = cachedRandomState;
-        if (rs == null) return null;
+        if (rs == null) return List.of();
         PositionalRandomFactory islandRand = rs.getOrCreateRandomFactory(RL_ISLANDS);
         long noiseSeed = rs.getOrCreateRandomFactory(RL_TERRAIN).at(0, 0, 0).nextLong();
         int originGX = Math.floorDiv(origin.getX(), GRID_SIZE);
         int originGZ = Math.floorDiv(origin.getZ(), GRID_SIZE);
-        BlockPos nearest = null;
-        double nearestDist = Double.MAX_VALUE;
+        List<BlockPos> candidates = new ArrayList<>();
         for (int dx = -searchCellRadius; dx <= searchCellRadius; dx++) {
             for (int dz = -searchCellRadius; dz <= searchCellRadius; dz++) {
                 List<IslandData> islands = new ArrayList<>();
@@ -537,16 +537,12 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                     if ((hc & 0x7L) != 0) continue;
                     int topY = approximateTopY(isl.cx(), isl.cz(), isl, noiseSeed);
                     if (topY == Integer.MIN_VALUE) topY = isl.cy();
-                    BlockPos candidate = new BlockPos(isl.cx(), topY, isl.cz());
-                    double d = candidate.distSqr(origin);
-                    if (d < nearestDist) {
-                        nearestDist = d;
-                        nearest = candidate;
-                    }
+                    candidates.add(new BlockPos(isl.cx(), topY, isl.cz()));
                 }
             }
         }
-        return nearest;
+        candidates.sort(java.util.Comparator.comparingDouble(p -> p.distSqr(origin)));
+        return candidates;
     }
 
     private static void buildCellIslands(int cellX, int cellZ,
