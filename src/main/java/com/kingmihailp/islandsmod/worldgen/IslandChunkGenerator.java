@@ -16,6 +16,7 @@ import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -443,6 +444,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     }
 
     private BlockState chooseSurfaceTop(Holder<Biome> biome) {
+        if (biome.is(Biomes.MUSHROOM_FIELDS)) return Blocks.MYCELIUM.defaultBlockState();
         if (biome.is(BiomeTags.IS_BADLANDS))  return Blocks.RED_SAND.defaultBlockState();
         if (biome.is(BiomeTags.IS_SAVANNA))   return Blocks.GRASS_BLOCK.defaultBlockState();
         Biome b = biome.value();
@@ -454,6 +456,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
     }
 
     private BlockState chooseSurfaceUnder(Holder<Biome> biome) {
+        if (biome.is(Biomes.MUSHROOM_FIELDS)) return Blocks.DIRT.defaultBlockState();
         if (biome.is(BiomeTags.IS_BADLANDS))  return Blocks.TERRACOTTA.defaultBlockState();
         if (biome.is(BiomeTags.IS_SAVANNA))   return Blocks.DIRT.defaultBlockState();
         Biome b = biome.value();
