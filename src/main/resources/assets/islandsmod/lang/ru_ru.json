@@ -10,5 +10,7 @@
   "item.islandsmod.pocket_end_fortress": "Карманная крепость Энда",
   "item.islandsmod.catalyst_locator": "Локатор катализатора Энда",
   "item.islandsmod.catalyst_locator.found": "Ближайший катализатор: %s, %s, %s (%s блоков, %s)",
-  "item.islandsmod.catalyst_locator.not_found": "Катализаторы рядом не найдены."
+  "item.islandsmod.catalyst_locator.not_found": "Катализаторы рядом не найдены.",
+  "item.islandsmod.confetti_cannon": "Конфетти-пушка",
+  "item.islandsmod.confetti_cannon.mod_missing": "Мод Supplementaries не установлен!"
 }

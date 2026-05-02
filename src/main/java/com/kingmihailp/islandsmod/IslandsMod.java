@@ -32,6 +32,7 @@ public class IslandsMod {
             event.accept(ModItems.PORTAL_CATALYST.get());
             event.accept(ModItems.POCKET_END_FORTRESS.get());
             event.accept(ModItems.CATALYST_LOCATOR.get());
+            event.accept(ModItems.CONFETTI_CANNON.get());
         }
     }
 }

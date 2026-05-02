@@ -10,5 +10,7 @@
   "item.islandsmod.pocket_end_fortress": "Pocket End Fortress",
   "item.islandsmod.catalyst_locator": "End Catalyst Locator",
   "item.islandsmod.catalyst_locator.found": "Nearest portal catalyst: %s, %s, %s (%s blocks, %s)",
-  "item.islandsmod.catalyst_locator.not_found": "No portal catalyst found nearby."
+  "item.islandsmod.catalyst_locator.not_found": "No portal catalyst found nearby.",
+  "item.islandsmod.confetti_cannon": "Confetti Cannon",
+  "item.islandsmod.confetti_cannon.mod_missing": "Supplementaries mod is not installed!"
 }
