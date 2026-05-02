@@ -408,7 +408,7 @@ public class IslandChunkGenerator extends NoiseBasedChunkGenerator {
                     hm ^= hm >>> 33;
                     hm *= 0xff51afd7ed558ccdL;
                     hm ^= hm >>> 33;
-                    if ((hm & 0x3FFFL) == 0) {
+                    if ((hm & 0x7FFFL) == 0) {
                         BlockState[] mv = getMoltenVentStates();
                         BlockState candidate = mv[(int)((hm >>> 16) % 6)];
                         if (candidate != null) block = candidate;
