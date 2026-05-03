@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "L  ",
+    "PCP",
+    "ISI"
+  ],
+  "key": {
+    "L": { "item": "minecraft:lightning_rod" },
+    "P": { "item": "tfmg:plastic_sheet" },
+    "C": { "item": "computercraft:pocket_computer_normal" },
+    "I": { "item": "ccbr:integrated_circuit" },
+    "S": { "item": "tfmg:steel_mechanism" }
+  },
+  "result": {
+    "id": "islandsmod:catalyst_locator",
+    "count": 1
+  }
+}
