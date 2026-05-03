@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "GEG",
+    "GPG",
+    "OSO"
+  ],
+  "key": {
+    "G": { "item": "minecraft:magenta_stained_glass" },
+    "E": { "item": "minecraft:experience_bottle" },
+    "P": { "item": "islandsmod:pocket_dungeon" },
+    "O": { "item": "minecraft:obsidian" },
+    "S": { "item": "dungeonsdelight:stained_scrap" }
+  },
+  "result": {
+    "id": "islandsmod:pocket_end_fortress",
+    "count": 1
+  }
+}
