@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "FDF",
+    "DSD",
+    "FDF"
+  ],
+  "key": {
+    "F": { "item": "minecraft:warped_fungus" },
+    "D": { "item": "createaddition:diamond_grit" },
+    "S": { "item": "alexsmobs:soul_heart" }
+  },
+  "result": {
+    "id": "islandsmod:warped_lure",
+    "count": 1
+  }
+}
